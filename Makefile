@@ -1,4 +1,4 @@
-.PHONY: dev-frontend dev-backend build clean
+.PHONY: dev-frontend dev-backend build clean test test-go test-frontend
 
 FRONTEND_DIR = frontend
 GO_BIN = /opt/homebrew/bin/go
@@ -19,6 +19,14 @@ build-backend: build-frontend
 	mkdir -p $(BUILD_DIR)/frontend
 	cp -r $(FRONTEND_DIR)/dist $(BUILD_DIR)/frontend/dist
 	$(GO_BIN) build -ldflags="-s -w" -o ghostterm ./$(BUILD_DIR)
+
+test: test-go test-frontend
+
+test-go:
+	$(GO_BIN) test ./internal/... -count=1
+
+test-frontend:
+	cd $(FRONTEND_DIR) && npm test
 
 clean:
 	rm -f ghostterm
