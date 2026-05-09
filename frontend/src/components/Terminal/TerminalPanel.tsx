@@ -1,6 +1,8 @@
 import { useAppStore } from '../../stores/appStore';
+import { useMediaQuery, MOBILE_QUERY } from '../../hooks/useMediaQuery';
 import { TabBar } from './TabBar';
 import { TerminalView } from './TerminalView';
+import { MobileInputBar } from './MobileInputBar';
 
 interface TerminalPanelProps {
   showMenuButton?: boolean;
@@ -9,6 +11,7 @@ interface TerminalPanelProps {
 
 export function TerminalPanel({ showMenuButton, onMenuClick }: TerminalPanelProps) {
   const { activeSessionId } = useAppStore();
+  const isMobile = useMediaQuery(MOBILE_QUERY);
 
   return (
     <div style={{
@@ -19,12 +22,13 @@ export function TerminalPanel({ showMenuButton, onMenuClick }: TerminalPanelProp
       overflow: 'hidden',
     }}>
       <TabBar showMenuButton={showMenuButton} onMenuClick={onMenuClick} />
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0 }}>
         {/* Single mount point. Inactive sessions live in the cache with their
             xterm DOM nodes detached — VS Code's pattern, the only one xterm.js
             supports for tab-style switching (see xtermjs/xterm.js#3029). */}
         <TerminalView sessionId={activeSessionId} />
       </div>
+      {isMobile && <MobileInputBar sessionId={activeSessionId} />}
     </div>
   );
 }

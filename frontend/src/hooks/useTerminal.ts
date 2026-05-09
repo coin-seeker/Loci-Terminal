@@ -281,3 +281,14 @@ export function pasteToTerminal(sessionId: string, text: string): boolean {
   inst.terminal.paste(text);
   return true;
 }
+
+// Send raw bytes straight to the WebSocket, bypassing xterm's input pipeline.
+// Used by the mobile input bar: a normal <textarea> has reliable IME handling,
+// so we let the user compose text there and forward the result here. Returns
+// false if the session has no open socket.
+export function sendToTerminal(sessionId: string, data: string): boolean {
+  const inst = instances.get(sessionId);
+  if (!inst || !inst.ws || inst.ws.readyState !== WebSocket.OPEN) return false;
+  inst.ws.send(new TextEncoder().encode(data));
+  return true;
+}

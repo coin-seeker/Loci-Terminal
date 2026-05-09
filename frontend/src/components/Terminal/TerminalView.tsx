@@ -1,6 +1,7 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTerminal, pasteToTerminal } from '../../hooks/useTerminal';
 import { useEffectiveTheme } from '../../hooks/useEffectiveTheme';
+import { useMediaQuery, MOBILE_QUERY } from '../../hooks/useMediaQuery';
 import { uploadFile } from '../../api/upload';
 import '@xterm/xterm/css/xterm.css';
 
@@ -11,7 +12,26 @@ interface TerminalViewProps {
 export function TerminalView({ sessionId }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { ui, terminalTheme } = useEffectiveTheme();
+  const isMobile = useMediaQuery(MOBILE_QUERY);
   useTerminal({ sessionId, containerRef, theme: terminalTheme });
+
+  // On mobile we route input through MobileInputBar instead of xterm's hidden
+  // textarea (its 1px field breaks CJK IME composition on Android/iOS — see
+  // MobileInputBar.tsx). Lock xterm's textarea read-only and keep it out of
+  // the focus path so taps on the terminal don't summon the OS keyboard.
+  useEffect(() => {
+    const ta = containerRef.current?.querySelector<HTMLTextAreaElement>('textarea');
+    if (!ta) return;
+    if (isMobile) {
+      ta.setAttribute('readonly', 'true');
+      ta.setAttribute('tabindex', '-1');
+      ta.setAttribute('inputmode', 'none');
+    } else {
+      ta.removeAttribute('readonly');
+      ta.removeAttribute('inputmode');
+      ta.setAttribute('tabindex', '0');
+    }
+  }, [isMobile, sessionId]);
 
   const [isDragging, setIsDragging] = useState(false);
   const [uploadingName, setUploadingName] = useState<string | null>(null);
