@@ -13,9 +13,18 @@ export default function App() {
   const { ui } = useEffectiveTheme();
   const isMobile = useMediaQuery(MOBILE_QUERY);
 
+  const PERM_DISMISS_KEY = 'lociterm.permissionBannerDismissed';
+
   const [authState, setAuthState] = useState<AuthState>('loading');
   const [permWarning, setPermWarning] = useState<string | null>(null);
   const [permChecking, setPermChecking] = useState(false);
+  const [permDismissed, setPermDismissed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(PERM_DISMISS_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
   const [sidebarWidth, setSidebarWidth] = useState(220);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const dragging = useRef(false);
@@ -45,9 +54,22 @@ export default function App() {
         setPermWarning(data.permissionMessage);
       } else {
         setPermWarning(null);
+        // Permissions are healthy — clear the dismiss flag so the banner
+        // can reappear if permissions later break again.
+        try {
+          localStorage.removeItem(PERM_DISMISS_KEY);
+        } catch {}
+        setPermDismissed(false);
       }
     } catch {}
     setPermChecking(false);
+  }, []);
+
+  const dismissPermBanner = useCallback(() => {
+    try {
+      localStorage.setItem(PERM_DISMISS_KEY, '1');
+    } catch {}
+    setPermDismissed(true);
   }, []);
 
   useEffect(() => {
@@ -142,112 +164,85 @@ export default function App() {
 
   const sidebarPanelWidth = isMobile ? Math.min(280, window.innerWidth - 56) : sidebarWidth;
 
+  const showPermBanner = !!permWarning && !permDismissed;
+
   return (
     <div style={{
       display: 'flex',
+      flexDirection: 'column',
       width: '100vw',
       height: '100dvh',
       backgroundColor: ui.appBg,
       overflow: 'hidden',
       position: 'relative',
     }}>
-      {permWarning && (
+      {showPermBanner && (
         <div style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 2000,
+          flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: ui.overlayBg,
+          gap: 12,
+          padding: '8px 12px',
+          backgroundColor: ui.warning,
+          color: '#000',
           fontFamily: "'JetBrains Mono', monospace",
-          padding: '16px',
+          fontSize: 12,
+          lineHeight: 1.4,
+          borderBottom: `1px solid ${ui.sidebarBorder}`,
         }}>
-          <div style={{
-            backgroundColor: ui.tabActiveBg,
-            border: `1px solid ${ui.sidebarBorder}`,
-            padding: '24px',
-            maxWidth: '480px',
-            width: '100%',
-            boxSizing: 'border-box',
-            borderRadius: 6,
-          }}>
-            <div style={{
-              color: ui.warning,
-              fontSize: '16px',
+          <span style={{ fontWeight: 600, flexShrink: 0 }}>Permission</span>
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            Full Disk Access required — System Settings ▸ Privacy & Security ▸ Full Disk Access ▸ add <code style={{ background: 'rgba(0,0,0,0.12)', padding: '0 4px', borderRadius: 2 }}>/usr/local/bin/lociterm</code>
+          </span>
+          <button
+            onClick={checkPermissions}
+            disabled={permChecking}
+            style={{
+              flexShrink: 0,
+              padding: '4px 10px',
+              backgroundColor: 'rgba(0,0,0,0.15)',
+              border: '1px solid rgba(0,0,0,0.25)',
+              color: '#000',
+              fontSize: 12,
+              fontFamily: 'inherit',
               fontWeight: 600,
-              marginBottom: '16px',
-            }}>
-              Permission Required
-            </div>
-
-            <div style={{
-              color: ui.textSecondary,
-              fontSize: '13px',
-              lineHeight: 1.6,
-              marginBottom: '20px',
-            }}>
-              LociTerm needs <span style={{ color: ui.textPrimary }}>Full Disk Access</span> to
-              access protected directories like ~/Documents and ~/Desktop.
-            </div>
-
-            <div style={{
-              color: ui.textSecondary,
-              fontSize: '13px',
-              lineHeight: 1.9,
-              marginBottom: '20px',
-            }}>
-              <div style={{ color: ui.textPrimary, marginBottom: 4 }}>Steps:</div>
-              <div>1. Open <span style={{ color: ui.accent }}>System Settings</span></div>
-              <div>2. Go to <span style={{ color: ui.accent }}>Privacy & Security {'>'} Full Disk Access</span></div>
-              <div style={{ wordBreak: 'break-all' }}>
-                3. Click <span style={{ color: ui.accent }}>+</span> and add <span style={{ color: ui.textPrimary, background: ui.hoverBg, padding: '1px 6px', borderRadius: 3 }}>/usr/local/bin/lociterm</span>
-              </div>
-              <div>4. Restart the service</div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-              <button
-                onClick={checkPermissions}
-                disabled={permChecking}
-                style={{
-                  flex: '1 1 200px',
-                  padding: '12px',
-                  backgroundColor: ui.accent,
-                  border: 'none',
-                  color: '#fff',
-                  fontSize: '13px',
-                  fontFamily: 'inherit',
-                  fontWeight: 600,
-                  cursor: permChecking ? 'wait' : 'pointer',
-                  opacity: permChecking ? 0.6 : 1,
-                  borderRadius: 4,
-                  minHeight: 44,
-                }}
-              >
-                {permChecking ? 'Checking...' : "I've fixed it — Check again"}
-              </button>
-              <button
-                onClick={() => setPermWarning(null)}
-                style={{
-                  padding: '12px 16px',
-                  backgroundColor: 'transparent',
-                  border: `1px solid ${ui.sidebarBorder}`,
-                  color: ui.textSecondary,
-                  fontSize: '13px',
-                  fontFamily: 'inherit',
-                  cursor: 'pointer',
-                  borderRadius: 4,
-                  minHeight: 44,
-                }}
-              >
-                Skip
-              </button>
-            </div>
-          </div>
+              cursor: permChecking ? 'wait' : 'pointer',
+              opacity: permChecking ? 0.6 : 1,
+              borderRadius: 3,
+            }}
+          >
+            {permChecking ? 'Checking…' : 'Recheck'}
+          </button>
+          <button
+            onClick={dismissPermBanner}
+            aria-label="Dismiss"
+            title="Dismiss"
+            style={{
+              flexShrink: 0,
+              width: 22,
+              height: 22,
+              padding: 0,
+              backgroundColor: 'transparent',
+              border: 'none',
+              color: '#000',
+              fontSize: 16,
+              lineHeight: 1,
+              fontFamily: 'inherit',
+              cursor: 'pointer',
+              borderRadius: 3,
+            }}
+          >
+            ×
+          </button>
         </div>
       )}
 
+      <div style={{
+        display: 'flex',
+        flex: 1,
+        minHeight: 0,
+        position: 'relative',
+      }}>
       {!isMobile && (
         <>
           <div style={{ width: sidebarPanelWidth, flexShrink: 0, height: '100%' }}>
@@ -305,6 +300,7 @@ export default function App() {
           showMenuButton={isMobile}
           onMenuClick={() => setMobileSidebarOpen(true)}
         />
+      </div>
       </div>
     </div>
   );
