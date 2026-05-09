@@ -15,6 +15,7 @@ type Session struct {
 	WorkspaceID string    `json:"workspaceId"`
 	Title       string    `json:"title"`
 	Shell       string    `json:"shell,omitempty"`
+	Cwd         string    `json:"cwd,omitempty"`
 	SortOrder   int       `json:"sortOrder"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`

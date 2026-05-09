@@ -11,6 +11,7 @@ export interface Session {
   workspaceId: string;
   title: string;
   shell?: string;
+  cwd?: string;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;

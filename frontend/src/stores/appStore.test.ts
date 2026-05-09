@@ -26,6 +26,7 @@ describe('appStore', () => {
       sessions: {},
       activeWorkspaceId: null,
       activeSessionId: null,
+      activeSessionByWorkspace: {},
       initialized: false,
     });
   });

@@ -27,7 +27,7 @@ func setupTestAPI(t *testing.T) (store.Store, *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/v1/workspaces/{id}", wh.Update)
 	mux.HandleFunc("DELETE /api/v1/workspaces/{id}", wh.Delete)
 
-	sh := NewSessionHandler(s, noop)
+	sh := NewSessionHandler(s, nil, noop)
 	mux.HandleFunc("GET /api/v1/workspaces/{wid}/sessions", sh.List)
 	mux.HandleFunc("POST /api/v1/workspaces/{wid}/sessions", sh.Create)
 	mux.HandleFunc("PATCH /api/v1/sessions/{id}", sh.Update)

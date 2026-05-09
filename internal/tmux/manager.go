@@ -104,6 +104,33 @@ func (m *Manager) KillSession(sessionID string) error {
 	return nil
 }
 
+// GetCwd returns the current working directory of the session's primary pane.
+// Returns "" if tmux is unavailable or the session doesn't exist (graceful: the
+// sidebar treats empty CWD as "don't display"). The home prefix is shortened
+// to "~" for display friendliness.
+func (m *Manager) GetCwd(sessionID string) string {
+	name := sessionPrefix + sessionID
+	cmd := m.tmuxCmd("display-message", "-t", name, "-p", "#{pane_current_path}")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	cwd := strings.TrimSpace(string(out))
+	if cwd == "" {
+		return ""
+	}
+	home, err := os.UserHomeDir()
+	if err == nil && home != "" {
+		if cwd == home {
+			return "~"
+		}
+		if strings.HasPrefix(cwd, home+"/") {
+			return "~" + cwd[len(home):]
+		}
+	}
+	return cwd
+}
+
 func (m *Manager) ListTmuxSessions() ([]string, error) {
 	cmd := m.tmuxCmd("list-sessions", "-F", "#{session_name}")
 	out, err := cmd.Output()

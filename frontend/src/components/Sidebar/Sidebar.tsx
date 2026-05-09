@@ -28,7 +28,9 @@ const themeLabel: Record<ThemeMode, string> = {
 export function Sidebar({ onCloseMobile }: SidebarProps) {
   const {
     workspaces,
+    sessions,
     activeWorkspaceId,
+    activeSessionByWorkspace,
     setActiveWorkspace,
     createWorkspace,
     deleteWorkspace,
@@ -143,64 +145,100 @@ export function Sidebar({ onCloseMobile }: SidebarProps) {
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '4px 0' }}>
-        {workspaces.map((ws) => (
-          <div
-            key={ws.id}
-            onClick={() => setActiveWorkspace(ws.id)}
-            onContextMenu={(e) => handleContextMenu(e, ws.id)}
-            style={{
-              padding: '10px 16px',
-              cursor: 'pointer',
-              backgroundColor: ws.id === activeWorkspaceId ? ui.tabActiveBg : 'transparent',
-              color: ws.id === activeWorkspaceId ? ui.textPrimary : ui.textSecondary,
-              fontSize: '13px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              minHeight: 40,
-            }}
-          >
-            {editingId === ws.id ? (
-              <input
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                onBlur={() => handleRename(ws.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleRename(ws.id);
-                  if (e.key === 'Escape') setEditingId(null);
-                }}
-                autoFocus
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  background: 'transparent',
-                  border: `1px solid ${ui.accent}`,
-                  color: ui.textPrimary,
-                  fontSize: '13px',
-                  fontFamily: 'inherit',
-                  padding: '4px 6px',
-                  width: '100%',
-                  outline: 'none',
-                }}
-              />
-            ) : (
-              <span
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  startRename(ws.id, ws.name);
-                }}
-                style={{
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  flex: 1,
-                }}
-                title="Double-click or right-click to rename"
-              >
-                {ws.name}
-              </span>
-            )}
-          </div>
-        ))}
+        {workspaces.map((ws) => {
+          // Pick the CWD of the workspace's last-active session; fall back to
+          // the first session if we haven't tracked one yet.
+          const wsSessions = sessions[ws.id] ?? [];
+          const activeId = activeSessionByWorkspace[ws.id];
+          const activeSession =
+            wsSessions.find((s) => s.id === activeId) ?? wsSessions[0];
+          const cwd = activeSession?.cwd;
+          return (
+            <div
+              key={ws.id}
+              onClick={() => setActiveWorkspace(ws.id)}
+              onContextMenu={(e) => handleContextMenu(e, ws.id)}
+              style={{
+                padding: '10px 16px',
+                cursor: 'pointer',
+                backgroundColor: ws.id === activeWorkspaceId ? ui.tabActiveBg : 'transparent',
+                color: ws.id === activeWorkspaceId ? ui.textPrimary : ui.textSecondary,
+                fontSize: '13px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                minHeight: 40,
+              }}
+            >
+              {editingId === ws.id ? (
+                <input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  onBlur={() => handleRename(ws.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleRename(ws.id);
+                    if (e.key === 'Escape') setEditingId(null);
+                  }}
+                  autoFocus
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    background: 'transparent',
+                    border: `1px solid ${ui.accent}`,
+                    color: ui.textPrimary,
+                    fontSize: '13px',
+                    fontFamily: 'inherit',
+                    padding: '4px 6px',
+                    width: '100%',
+                    outline: 'none',
+                  }}
+                />
+              ) : (
+                <div
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    startRename(ws.id, ws.name);
+                  }}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 2,
+                  }}
+                  title="Double-click or right-click to rename"
+                >
+                  <span
+                    style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {ws.name}
+                  </span>
+                  {cwd && (
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        color: ui.textMuted,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        // Clip the start of long paths so the tail (the
+                        // current dir) stays visible.
+                        direction: 'rtl',
+                        textAlign: 'left',
+                      }}
+                      title={cwd}
+                    >
+                      {cwd}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         {creating && (
           <div style={{ padding: '4px 16px' }}>

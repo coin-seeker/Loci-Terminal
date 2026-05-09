@@ -9,12 +9,13 @@ import (
 )
 
 type SessionHandler struct {
-	store         store.Store
-	onDeleteFunc  func(sessionID string)
+	store        store.Store
+	onDeleteFunc func(sessionID string)
+	getCwdFunc   func(sessionID string) string
 }
 
-func NewSessionHandler(s store.Store, onDelete func(sessionID string)) *SessionHandler {
-	return &SessionHandler{store: s, onDeleteFunc: onDelete}
+func NewSessionHandler(s store.Store, getCwd func(sessionID string) string, onDelete func(sessionID string)) *SessionHandler {
+	return &SessionHandler{store: s, getCwdFunc: getCwd, onDeleteFunc: onDelete}
 }
 
 func (h *SessionHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -26,6 +27,11 @@ func (h *SessionHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if sessions == nil {
 		sessions = []model.Session{}
+	}
+	if h.getCwdFunc != nil {
+		for i := range sessions {
+			sessions[i].Cwd = h.getCwdFunc(sessions[i].ID)
+		}
 	}
 	writeJSON(w, http.StatusOK, sessions)
 }

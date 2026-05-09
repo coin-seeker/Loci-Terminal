@@ -7,6 +7,9 @@ interface AppState {
   sessions: Record<string, Session[]>;
   activeWorkspaceId: string | null;
   activeSessionId: string | null;
+  // Last active session per workspace. Used both to restore the right tab when
+  // switching workspaces and to pick which session's CWD the sidebar shows.
+  activeSessionByWorkspace: Record<string, string>;
   initialized: boolean;
 
   init: () => Promise<void>;
@@ -17,6 +20,7 @@ interface AppState {
   setActiveWorkspace: (id: string) => Promise<void>;
 
   fetchSessions: (workspaceId: string) => Promise<void>;
+  pollActive: () => Promise<void>;
   createSession: (workspaceId: string, title?: string) => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
   renameSession: (id: string, title: string) => Promise<void>;
@@ -28,6 +32,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   sessions: {},
   activeWorkspaceId: null,
   activeSessionId: null,
+  activeSessionByWorkspace: {},
   initialized: false,
 
   init: async () => {
@@ -38,19 +43,31 @@ export const useAppStore = create<AppState>((set, get) => ({
       workspaces = [ws];
     }
 
-    const wid = workspaces[0].id;
-    let sessions = await api.listSessions(wid);
+    // Fetch all workspaces' sessions in parallel so the sidebar can show CWD
+    // for every workspace, not just the active one.
+    const lists = await Promise.all(workspaces.map((w) => api.listSessions(w.id)));
+    const sessions: Record<string, Session[]> = {};
+    const activeSessionByWorkspace: Record<string, string> = {};
+    workspaces.forEach((w, i) => {
+      sessions[w.id] = lists[i];
+      if (lists[i].length > 0) {
+        activeSessionByWorkspace[w.id] = lists[i][0].id;
+      }
+    });
 
-    if (sessions.length === 0) {
+    const wid = workspaces[0].id;
+    if (sessions[wid].length === 0) {
       const sess = await api.createSession(wid);
-      sessions = [sess];
+      sessions[wid] = [sess];
+      activeSessionByWorkspace[wid] = sess.id;
     }
 
     set({
       workspaces,
-      sessions: { [wid]: sessions },
+      sessions,
       activeWorkspaceId: wid,
-      activeSessionId: sessions[0].id,
+      activeSessionId: activeSessionByWorkspace[wid] ?? null,
+      activeSessionByWorkspace,
       initialized: true,
     });
   },
@@ -68,6 +85,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       sessions: { ...s.sessions, [ws.id]: [sess] },
       activeWorkspaceId: ws.id,
       activeSessionId: sess.id,
+      activeSessionByWorkspace: { ...s.activeSessionByWorkspace, [ws.id]: sess.id },
     }));
   },
 
@@ -77,13 +95,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       const workspaces = s.workspaces.filter((w) => w.id !== id);
       const sessions = { ...s.sessions };
       delete sessions[id];
+      const activeSessionByWorkspace = { ...s.activeSessionByWorkspace };
+      delete activeSessionByWorkspace[id];
       const nextWid = workspaces.length > 0 ? workspaces[0].id : null;
-      const nextSessions = nextWid ? sessions[nextWid] : undefined;
+      const nextActive = nextWid ? activeSessionByWorkspace[nextWid] ?? sessions[nextWid]?.[0]?.id ?? null : null;
       return {
         workspaces,
         sessions,
         activeWorkspaceId: nextWid,
-        activeSessionId: nextSessions?.[0]?.id ?? null,
+        activeSessionId: nextActive,
+        activeSessionByWorkspace,
       };
     });
   },
@@ -97,26 +118,40 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setActiveWorkspace: async (id: string) => {
     const state = get();
-    if (!state.sessions[id]) {
-      const sessions = await api.listSessions(id);
-      set((s) => ({
+    let sessions = state.sessions[id];
+    if (!sessions) {
+      sessions = await api.listSessions(id);
+    }
+    set((s) => {
+      const remembered = s.activeSessionByWorkspace[id];
+      const stillExists = remembered && sessions.some((sess) => sess.id === remembered);
+      const nextActive = stillExists ? remembered : sessions[0]?.id ?? null;
+      return {
         sessions: { ...s.sessions, [id]: sessions },
         activeWorkspaceId: id,
-        activeSessionId: sessions.length > 0 ? sessions[0].id : null,
-      }));
-    } else {
-      const sessions = state.sessions[id];
-      set({
-        activeWorkspaceId: id,
-        activeSessionId: sessions.length > 0 ? sessions[0].id : null,
-      });
-    }
+        activeSessionId: nextActive,
+        activeSessionByWorkspace: nextActive
+          ? { ...s.activeSessionByWorkspace, [id]: nextActive }
+          : s.activeSessionByWorkspace,
+      };
+    });
   },
 
   fetchSessions: async (workspaceId: string) => {
     const sessions = await api.listSessions(workspaceId);
     set((s) => ({
       sessions: { ...s.sessions, [workspaceId]: sessions },
+    }));
+  },
+
+  // Refresh the active workspace's session list — primarily to pick up CWD
+  // changes for the sidebar subtitle. Called on a 5s interval from App.tsx.
+  pollActive: async () => {
+    const wid = get().activeWorkspaceId;
+    if (!wid) return;
+    const sessions = await api.listSessions(wid);
+    set((s) => ({
+      sessions: { ...s.sessions, [wid]: sessions },
     }));
   },
 
@@ -128,6 +163,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         [workspaceId]: [...(s.sessions[workspaceId] || []), sess],
       },
       activeSessionId: sess.id,
+      activeSessionByWorkspace: { ...s.activeSessionByWorkspace, [workspaceId]: sess.id },
     }));
   },
 
@@ -137,14 +173,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       const wid = s.activeWorkspaceId;
       if (!wid) return s;
       const sessions = (s.sessions[wid] || []).filter((sess) => sess.id !== id);
+      const wasActive = s.activeSessionId === id;
+      const nextActive = wasActive ? sessions[0]?.id ?? null : s.activeSessionId;
+      const activeSessionByWorkspace = { ...s.activeSessionByWorkspace };
+      if (activeSessionByWorkspace[wid] === id) {
+        if (nextActive) {
+          activeSessionByWorkspace[wid] = nextActive;
+        } else {
+          delete activeSessionByWorkspace[wid];
+        }
+      }
       return {
         sessions: { ...s.sessions, [wid]: sessions },
-        activeSessionId:
-          s.activeSessionId === id
-            ? sessions.length > 0
-              ? sessions[0].id
-              : null
-            : s.activeSessionId,
+        activeSessionId: nextActive,
+        activeSessionByWorkspace,
       };
     });
   },
@@ -166,6 +208,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setActiveSession: (id: string) => {
-    set({ activeSessionId: id });
+    set((s) => {
+      const wid = s.activeWorkspaceId;
+      return {
+        activeSessionId: id,
+        activeSessionByWorkspace: wid
+          ? { ...s.activeSessionByWorkspace, [wid]: id }
+          : s.activeSessionByWorkspace,
+      };
+    });
   },
 }));

@@ -65,7 +65,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PATCH /api/v1/workspaces/{id}", s.requireAuth(wh.Update))
 	mux.HandleFunc("DELETE /api/v1/workspaces/{id}", s.requireAuth(wh.Delete))
 
-	sh := api.NewSessionHandler(s.store, killTmux)
+	sh := api.NewSessionHandler(s.store, s.tmuxMgr.GetCwd, killTmux)
 	mux.HandleFunc("GET /api/v1/workspaces/{wid}/sessions", s.requireAuth(sh.List))
 	mux.HandleFunc("POST /api/v1/workspaces/{wid}/sessions", s.requireAuth(sh.Create))
 	mux.HandleFunc("PATCH /api/v1/sessions/{id}", s.requireAuth(sh.Update))

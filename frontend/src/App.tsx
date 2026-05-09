@@ -9,7 +9,7 @@ import { useMediaQuery, MOBILE_QUERY } from './hooks/useMediaQuery';
 type AuthState = 'loading' | 'needs-setup' | 'needs-login' | 'authenticated';
 
 export default function App() {
-  const { initialized, init } = useAppStore();
+  const { initialized, init, pollActive } = useAppStore();
   const { ui } = useEffectiveTheme();
   const isMobile = useMediaQuery(MOBILE_QUERY);
 
@@ -64,6 +64,20 @@ export default function App() {
   useEffect(() => {
     if (!isMobile) setMobileSidebarOpen(false);
   }, [isMobile]);
+
+  // Poll the active workspace's session list every 5s so the sidebar's CWD
+  // subtitle reflects `cd` activity. Pauses when the tab is hidden — no point
+  // refreshing data the user can't see.
+  useEffect(() => {
+    if (!initialized) return;
+    const tick = () => {
+      if (document.visibilityState === 'visible') {
+        pollActive();
+      }
+    };
+    const id = window.setInterval(tick, 5000);
+    return () => window.clearInterval(id);
+  }, [initialized, pollActive]);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
