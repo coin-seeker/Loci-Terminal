@@ -86,22 +86,23 @@ function bindInputListeners(inst: TerminalInstance): void {
   if (inst.listenersBound) return;
   inst.listenersBound = true;
 
-  const send = (data: string | Uint8Array) => {
+  // WebSocket.send rejects views over SharedArrayBuffer in current TS lib types,
+  // so the parameter is narrowed to Uint8Array<ArrayBuffer>. Both TextEncoder
+  // output and `new Uint8Array(length)` produce that exact type.
+  const sendBytes = (bytes: Uint8Array<ArrayBuffer>) => {
     const ws = inst.ws;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    if (typeof data === 'string') {
-      ws.send(new TextEncoder().encode(data));
-    } else {
-      ws.send(data);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(bytes);
     }
   };
+  const sendString = (data: string) => sendBytes(new TextEncoder().encode(data));
 
-  inst.terminal.onData((data) => send(data));
-  inst.terminal.attachCustomKeyEventHandler(createShiftEnterHandler((data) => send(data)));
+  inst.terminal.onData(sendString);
+  inst.terminal.attachCustomKeyEventHandler(createShiftEnterHandler(sendString));
   inst.terminal.onBinary((data) => {
     const buf = new Uint8Array(data.length);
     for (let i = 0; i < data.length; i++) buf[i] = data.charCodeAt(i);
-    send(buf);
+    sendBytes(buf);
   });
 }
 
