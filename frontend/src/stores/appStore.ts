@@ -8,6 +8,42 @@ export interface SessionActivity {
   notifiedAt: number;
 }
 
+// "Idle-after-busy" heuristic: an output burst marks unread only after
+// IDLE_MS of silence and only if the burst was longer than MIN_BUSY_MS.
+// This filters spinner/cursor noise (which never goes idle and is too
+// brief individually) while still catching real task completion — the
+// moment a Claude/Codex/build-process stops producing output.
+const IDLE_MS = 1500;
+const MIN_BUSY_MS = 500;
+
+interface BusyTrack {
+  startedAt: number;
+  lastByteAt: number;
+}
+
+// Module-level transient state — kept outside zustand so per-byte
+// bookkeeping doesn't trigger any subscriber re-renders. Zustand state
+// only mutates when the idle timer fires and decides to flip `unread`.
+const busyTrack = new Map<string, BusyTrack>();
+const idleTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function cancelIdleTracking(sessionId: string): void {
+  const t = idleTimers.get(sessionId);
+  if (t !== undefined) {
+    clearTimeout(t);
+    idleTimers.delete(sessionId);
+  }
+  busyTrack.delete(sessionId);
+}
+
+// Test-only escape hatch: the module-level Maps survive `useAppStore.setState`
+// resets in test setup, so tests need an explicit way to clear them.
+export function __resetActivityTrackingForTests(): void {
+  for (const t of idleTimers.values()) clearTimeout(t);
+  idleTimers.clear();
+  busyTrack.clear();
+}
+
 interface AppState {
   workspaces: Workspace[];
   sessions: Record<string, Session[]>;
@@ -114,6 +150,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const sessionActivity = { ...s.sessionActivity };
       for (const sess of removedSessions) {
         delete sessionActivity[sess.id];
+        cancelIdleTracking(sess.id);
       }
       return {
         workspaces,
@@ -186,6 +223,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   deleteSession: async (id: string) => {
     await api.deleteSession(id);
+    cancelIdleTracking(id);
     set((s) => {
       const wid = s.activeWorkspaceId;
       if (!wid) return s;
@@ -228,6 +266,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setActiveSession: (id: string) => {
+    cancelIdleTracking(id);
     set((s) => {
       const wid = s.activeWorkspaceId;
       const prev = s.sessionActivity[id];
@@ -245,32 +284,75 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  // Skip when the session is the active foreground — the user is already
-  // watching it, so there's nothing to badge.
+  // Idle-after-busy: each output chunk only updates the in-memory busy
+  // tracker and resets a debounce timer. The store mutates (and Sidebar /
+  // TabBar re-render) only when IDLE_MS of silence follows a burst longer
+  // than MIN_BUSY_MS — i.e. when an agent / build / shell command has
+  // genuinely finished, not while a spinner is animating.
   markSessionOutput: (sessionId: string) => {
     const state = get();
     const isActiveForeground =
       sessionId === state.activeSessionId &&
       typeof document !== 'undefined' &&
       document.visibilityState === 'visible';
-    if (isActiveForeground) return;
+    if (isActiveForeground) {
+      cancelIdleTracking(sessionId);
+      return;
+    }
+
     const now = Date.now();
-    set((s) => {
-      const prev = s.sessionActivity[sessionId];
-      return {
-        sessionActivity: {
-          ...s.sessionActivity,
-          [sessionId]: {
-            unread: true,
-            lastOutputAt: now,
-            notifiedAt: prev?.notifiedAt ?? 0,
-          },
-        },
-      };
-    });
+    const track = busyTrack.get(sessionId);
+    if (track) {
+      track.lastByteAt = now;
+    } else {
+      busyTrack.set(sessionId, { startedAt: now, lastByteAt: now });
+    }
+
+    const existing = idleTimers.get(sessionId);
+    if (existing !== undefined) clearTimeout(existing);
+
+    idleTimers.set(
+      sessionId,
+      setTimeout(() => {
+        idleTimers.delete(sessionId);
+        const t = busyTrack.get(sessionId);
+        busyTrack.delete(sessionId);
+        if (!t) return;
+        // Burst length is wall time between first and last byte of this
+        // burst — NOT the time the timer waited. A single stray byte has
+        // length 0 and never qualifies; a 600ms streaming chunk does.
+        if (t.lastByteAt - t.startedAt < MIN_BUSY_MS) return;
+
+        // Re-check at fire time — the user may have switched to this
+        // session, or the tab may have returned to foreground, while the
+        // idle window was elapsing.
+        const fresh = get();
+        const stillBackground =
+          sessionId !== fresh.activeSessionId ||
+          (typeof document !== 'undefined' &&
+            document.visibilityState !== 'visible');
+        if (!stillBackground) return;
+
+        set((s) => {
+          const prev = s.sessionActivity[sessionId];
+          if (prev?.unread) return s;
+          return {
+            sessionActivity: {
+              ...s.sessionActivity,
+              [sessionId]: {
+                unread: true,
+                lastOutputAt: t.lastByteAt,
+                notifiedAt: prev?.notifiedAt ?? 0,
+              },
+            },
+          };
+        });
+      }, IDLE_MS)
+    );
   },
 
   clearSessionUnread: (sessionId: string) => {
+    cancelIdleTracking(sessionId);
     set((s) => {
       const prev = s.sessionActivity[sessionId];
       if (!prev || !prev.unread) return s;
