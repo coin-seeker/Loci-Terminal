@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -26,8 +27,10 @@ func NewManager() *Manager {
 func (m *Manager) CreateSession(sessionID string, cols, rows uint16) error {
 	name := sessionPrefix + sessionID
 
+	home, _ := os.UserHomeDir()
 	cmd := exec.Command("tmux", "new-session", "-d", "-s", name,
 		"-x", fmt.Sprintf("%d", cols), "-y", fmt.Sprintf("%d", rows),
+		"-c", home,
 		m.shell)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("tmux new-session: %w: %s", err, string(out))
