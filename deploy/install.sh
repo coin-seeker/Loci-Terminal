@@ -159,6 +159,33 @@ print_uninstall_info() {
     fi
 }
 
+# ── macOS permissions check ───────────────────────────────────────
+
+check_macos_permissions() {
+    if [[ "$OS" != "Darwin" ]]; then return; fi
+
+    local test_dir="${HOME}/Documents"
+    if [[ -d "$test_dir" ]] && ! ls "$test_dir" &>/dev/null; then
+        echo ""
+        warn "========================================="
+        warn " Full Disk Access required on macOS"
+        warn "========================================="
+        warn ""
+        warn " Loci Terminal needs Full Disk Access to"
+        warn " access ~/Documents, ~/Desktop, etc."
+        warn ""
+        warn " 1. System Settings will open automatically"
+        warn " 2. Click '+' and add 'ghostterm'"
+        warn "    (located at /usr/local/bin/ghostterm)"
+        warn " 3. Restart the service"
+        warn ""
+        info "Opening System Settings..."
+        open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" 2>/dev/null || true
+    else
+        info "File access permissions OK"
+    fi
+}
+
 # ── Main ─────────────────────────────────────────────────────────
 
 print_usage() {
@@ -224,6 +251,7 @@ main() {
     info "========================================="
 
     if [[ "$OS" == "Darwin" ]]; then
+        check_macos_permissions
         echo ""
         info "Management:"
         info "  launchctl list | grep ghostterm     # check status"

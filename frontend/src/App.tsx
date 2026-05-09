@@ -10,6 +10,7 @@ type AuthState = 'loading' | 'needs-setup' | 'needs-login' | 'authenticated';
 export default function App() {
   const { initialized, init } = useAppStore();
   const [authState, setAuthState] = useState<AuthState>('loading');
+  const [permWarning, setPermWarning] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(220);
   const dragging = useRef(false);
 
@@ -36,6 +37,14 @@ export default function App() {
   useEffect(() => {
     if (authState === 'authenticated' && !initialized) {
       init();
+      fetch('/api/v1/health')
+        .then(r => r.json())
+        .then(data => {
+          if (data.permissions === false && data.permissionMessage) {
+            setPermWarning(data.permissionMessage);
+          }
+        })
+        .catch(() => {});
     }
   }, [authState, initialized, init]);
 
@@ -101,11 +110,39 @@ export default function App() {
   return (
     <div style={{
       display: 'flex',
+      flexDirection: 'column',
       width: '100vw',
       height: '100vh',
       backgroundColor: ui.terminalBg,
       overflow: 'hidden',
     }}>
+      {permWarning && (
+        <div style={{
+          padding: '8px 16px',
+          backgroundColor: '#d292221a',
+          borderBottom: `1px solid ${ui.sidebarBorder}`,
+          color: '#d29922',
+          fontSize: '12px',
+          fontFamily: "'JetBrains Mono', monospace",
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}>
+          <span>{permWarning}</span>
+          <button
+            onClick={() => setPermWarning(null)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#d29922',
+              cursor: 'pointer',
+              fontSize: '14px',
+              padding: '0 4px',
+            }}
+          >×</button>
+        </div>
+      )}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
       <div style={{ width: sidebarWidth, flexShrink: 0, height: '100%' }}>
         <Sidebar />
       </div>
@@ -130,6 +167,7 @@ export default function App() {
 
       <div style={{ flex: 1, height: '100%', overflow: 'hidden' }}>
         <TerminalPanel />
+      </div>
       </div>
     </div>
   );

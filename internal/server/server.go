@@ -1,9 +1,13 @@
 package server
 
 import (
+	"encoding/json"
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/younkyumjin/ghostterm/internal/api"
@@ -36,10 +40,7 @@ func New(frontendFS fs.FS, dataDir string) *Server {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /api/v1/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status":"ok"}`))
-	})
+	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 
 	ah := api.NewAuthHandler(api.AuthHandlerConfig{
 		Store:         s.store,
@@ -95,6 +96,37 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	homeDir, _ := os.UserHomeDir()
+	permOk := true
+	permMsg := ""
+
+	if runtime.GOOS == "darwin" {
+		testDirs := []string{
+			filepath.Join(homeDir, "Documents"),
+			filepath.Join(homeDir, "Desktop"),
+		}
+		for _, dir := range testDirs {
+			if _, err := os.ReadDir(dir); err != nil {
+				permOk = false
+				permMsg = "Full Disk Access required. Go to System Settings > Privacy & Security > Full Disk Access and add ghostterm (/usr/local/bin/ghostterm)."
+				break
+			}
+		}
+	}
+
+	resp := map[string]any{
+		"status":      "ok",
+		"permissions": permOk,
+	}
+	if permMsg != "" {
+		resp["permissionMessage"] = permMsg
+	}
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) spaHandler() http.Handler {
