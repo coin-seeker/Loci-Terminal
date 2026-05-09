@@ -131,6 +131,16 @@ export function useTerminal({ sessionId, containerRef, theme }: UseTerminalOptio
       } catch {
         console.warn('WebGL addon failed, using canvas renderer');
       }
+      // Tame mobile keyboards: stop autocapitalize/autocorrect/spellcheck from
+      // mangling input, especially CJK IME where mid-composition jamo can be
+      // "corrected" before the syllable is committed.
+      const ta = (inst.terminal as unknown as { textarea?: HTMLTextAreaElement }).textarea;
+      if (ta) {
+        ta.setAttribute('autocapitalize', 'off');
+        ta.setAttribute('autocorrect', 'off');
+        ta.setAttribute('autocomplete', 'off');
+        ta.setAttribute('spellcheck', 'false');
+      }
     }
 
     inst.fitAddon.fit();

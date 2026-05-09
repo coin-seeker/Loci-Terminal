@@ -8,8 +8,13 @@ interface TerminalPanelProps {
 }
 
 export function TerminalPanel({ showMenuButton, onMenuClick }: TerminalPanelProps) {
-  const { activeSessionId, activeWorkspaceId, sessions } = useAppStore();
-  const currentSessions = activeWorkspaceId ? sessions[activeWorkspaceId] || [] : [];
+  const { activeSessionId, sessions } = useAppStore();
+  // Render every session across every workspace and toggle visibility instead
+  // of remounting on workspace switch. Detaching a TerminalView from the DOM
+  // detaches xterm's element/canvas, and the WebGL renderer doesn't recover
+  // its contents on reattach — that's what caused the blank-terminal-until-
+  // refresh bug when switching back to the first workspace.
+  const allSessions = Object.values(sessions).flat();
 
   return (
     <div style={{
@@ -21,7 +26,7 @@ export function TerminalPanel({ showMenuButton, onMenuClick }: TerminalPanelProp
     }}>
       <TabBar showMenuButton={showMenuButton} onMenuClick={onMenuClick} />
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        {currentSessions.map((sess) => (
+        {allSessions.map((sess) => (
           <div
             key={sess.id}
             style={{
