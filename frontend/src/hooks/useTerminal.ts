@@ -77,14 +77,6 @@ export function useTerminal({ sessionId, containerRef, theme }: UseTerminalOptio
     ws.onopen = () => {
       const inst = instances.get(sid);
       if (!inst) return;
-      const container = inst.terminal.element?.parentElement;
-      if (!hasRealSize(container)) {
-        // The session is currently hidden (display:none in the inactive
-        // workspace). Don't fit — that would tell the server PTY to shrink
-        // to 2x1 and corrupt its content. fit() will run via the resize
-        // observer when this session becomes visible again.
-        return;
-      }
       inst.fitAddon.fit();
       const dims = inst.fitAddon.proposeDimensions();
       if (dims) {
@@ -193,7 +185,7 @@ export function useTerminal({ sessionId, containerRef, theme }: UseTerminalOptio
       }
     }
 
-    fitAndSendResize(inst, container);
+    inst.fitAddon.fit();
 
     if (!inst.ws || inst.ws.readyState === WebSocket.CLOSED) {
       connect(inst.terminal, sessionId);
