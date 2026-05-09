@@ -20,6 +20,9 @@ interface TerminalInstance {
   webgl: WebglAddon | null;
   reconnectTimer: number | undefined;
   listenersBound: boolean;
+  // IME composition state — see bindInputListeners for why these exist.
+  composing: boolean;
+  compositionSuppressUntil: number;
 }
 
 const instances = new Map<string, TerminalInstance>();
@@ -46,6 +49,8 @@ function createInstance(theme: ITheme): TerminalInstance {
     webgl: null,
     reconnectTimer: undefined,
     listenersBound: false,
+    composing: false,
+    compositionSuppressUntil: 0,
   };
 }
 
@@ -97,7 +102,32 @@ function bindInputListeners(inst: TerminalInstance): void {
   };
   const sendString = (data: string) => sendBytes(new TextEncoder().encode(data));
 
-  inst.terminal.onData(sendString);
+  // Mobile CJK IME (Korean, Japanese, Chinese) composes characters via the
+  // compositionstart/end lifecycle on the underlying <textarea>. xterm's
+  // onData fires for every input event, which on mobile leaks intermediate
+  // jamo (e.g. ㅎㅏㄴㄱㅡㄹ instead of 한글). We:
+  //   1. Suppress onData while inst.composing is true.
+  //   2. Send the final composed string from compositionend's event.data.
+  //   3. Briefly suppress onData after compositionend, since some browsers
+  //      fire xterm's input event with the same composed text right after
+  //      and we'd double-send.
+  const ta = (inst.terminal as unknown as { textarea?: HTMLTextAreaElement }).textarea;
+  if (ta) {
+    ta.addEventListener('compositionstart', () => {
+      inst.composing = true;
+    });
+    ta.addEventListener('compositionend', (e: CompositionEvent) => {
+      inst.composing = false;
+      if (e.data) sendString(e.data);
+      inst.compositionSuppressUntil = performance.now() + 50;
+    });
+  }
+
+  inst.terminal.onData((data) => {
+    if (inst.composing) return;
+    if (performance.now() < inst.compositionSuppressUntil) return;
+    sendString(data);
+  });
   inst.terminal.attachCustomKeyEventHandler(createShiftEnterHandler(sendString));
   inst.terminal.onBinary((data) => {
     const buf = new Uint8Array(data.length);
