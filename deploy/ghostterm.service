@@ -1,0 +1,15 @@
+[Unit]
+Description=GhostTerm - Web-based Multi-Terminal Server
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+ExecStart=/usr/local/bin/ghostterm --port 8080 --data-dir /var/lib/ghostterm
+Restart=on-failure
+RestartSec=5
+Environment=HOME=%h
+WorkingDirectory=%h
+
+[Install]
+WantedBy=multi-user.target
