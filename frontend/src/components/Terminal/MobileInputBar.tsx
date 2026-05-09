@@ -140,7 +140,9 @@ export function MobileInputBar({ sessionId }: MobileInputBarProps) {
             borderRadius: 6,
             color: ui.textPrimary,
             fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 14,
+            // iOS Safari auto-zooms focused inputs whose computed font-size is
+            // < 16px. Keep this at 16+ to suppress the zoom-on-focus behavior.
+            fontSize: 16,
             lineHeight: 1.4,
             outline: 'none',
           }}
