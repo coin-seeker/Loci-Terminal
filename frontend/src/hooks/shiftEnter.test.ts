@@ -7,14 +7,14 @@ function makeEvent(init: Partial<KeyboardEventInit> & { type?: string }): Keyboa
 }
 
 describe('createShiftEnterHandler', () => {
-  it('sends \\n and returns false on Shift+Enter keydown', () => {
+  it('sends ESC+CR and returns false on Shift+Enter keydown', () => {
     const send = vi.fn();
     const handler = createShiftEnterHandler(send);
 
     const result = handler(makeEvent({ key: 'Enter', shiftKey: true, type: 'keydown' }));
 
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenCalledWith('\n');
+    expect(send).toHaveBeenCalledWith('\x1b\r');
     expect(result).toBe(false);
   });
 

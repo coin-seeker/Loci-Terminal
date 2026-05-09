@@ -8,7 +8,11 @@ export function createShiftEnterHandler(send: SendFn) {
     if (event.ctrlKey || event.altKey || event.metaKey) return true;
 
     try {
-      send('\n');
+      // ESC + CR — the de facto Shift+Enter sequence used by iTerm2, WezTerm,
+      // and kitty. Modern AI CLIs (Claude Code, Aider, Codex via ink) treat
+      // this as "newline within prompt"; bash readline ignores the lone ESC
+      // and processes the CR as ordinary Enter, so it's safe in raw shells too.
+      send('\x1b\r');
     } catch {
       // WebSocket may have closed; swallow to avoid breaking xterm input pipeline.
     }
