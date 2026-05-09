@@ -17,8 +17,12 @@ type Session struct {
 	closed bool
 }
 
-func newSession(tmuxName string, cols, rows uint16) (*Session, error) {
-	cmd := exec.Command("tmux", "attach-session", "-t", tmuxName)
+func newSession(configPath, tmuxName string, cols, rows uint16) (*Session, error) {
+	args := []string{"attach-session", "-t", tmuxName}
+	if configPath != "" {
+		args = append([]string{"-f", configPath}, args...)
+	}
+	cmd := exec.Command("tmux", args...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{

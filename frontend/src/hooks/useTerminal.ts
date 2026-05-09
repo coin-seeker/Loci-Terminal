@@ -181,6 +181,7 @@ export function useTerminal({ sessionId, containerRef, theme }: UseTerminalOptio
       instances.set(sessionId, inst);
     }
 
+    let didReattach = false;
     if (inst.terminal.element) {
       // Re-attach the cached element to the (possibly new) container.
       // VS Code's pattern: keep one xterm instance per session alive but
@@ -188,6 +189,7 @@ export function useTerminal({ sessionId, containerRef, theme }: UseTerminalOptio
       // xterm.js's display:none corruption (xtermjs/xterm.js#494, #3029).
       if (inst.terminal.element.parentElement !== container) {
         container.appendChild(inst.terminal.element);
+        didReattach = true;
       }
     } else {
       inst.terminal.open(container);
@@ -197,6 +199,12 @@ export function useTerminal({ sessionId, containerRef, theme }: UseTerminalOptio
     }
 
     inst.fitAddon.fit();
+
+    if (didReattach) {
+      // xterm.js doesn't auto-repaint after a DOM move, and a same-size fit() is a no-op.
+      inst.webgl?.clearTextureAtlas();
+      inst.terminal.refresh(0, inst.terminal.rows - 1);
+    }
 
     if (!inst.ws || inst.ws.readyState === WebSocket.CLOSED) {
       connectWebSocket(inst, sessionId);

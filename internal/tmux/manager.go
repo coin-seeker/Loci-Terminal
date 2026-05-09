@@ -4,23 +4,36 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 )
 
 const sessionPrefix = "lt_"
 
+// Without `mouse on`, tmux's alt-screen triggers xterm.js's wheel→arrow-key translation.
+const tmuxConfigContents = `# Managed by LociTerm — do not edit.
+set -g mouse on
+`
+
 type Manager struct {
-	mu       sync.RWMutex
-	sessions map[string]*Session
-	shell    string
+	mu         sync.RWMutex
+	sessions   map[string]*Session
+	shell      string
+	configPath string
 }
 
 func NewManager() *Manager {
 	shell := detectShell()
+	configPath, err := ensureTmuxConfig()
+	if err != nil {
+		// A missing config means tmux falls back to user defaults; log and continue.
+		fmt.Fprintf(os.Stderr, "tmux: config setup failed: %v\n", err)
+	}
 	return &Manager{
-		sessions: make(map[string]*Session),
-		shell:    shell,
+		sessions:   make(map[string]*Session),
+		shell:      shell,
+		configPath: configPath,
 	}
 }
 
@@ -28,7 +41,7 @@ func (m *Manager) CreateSession(sessionID string, cols, rows uint16) error {
 	name := sessionPrefix + sessionID
 
 	home, _ := os.UserHomeDir()
-	cmd := exec.Command("tmux", "new-session", "-d", "-s", name,
+	cmd := m.tmuxCmd("new-session", "-d", "-s", name,
 		"-x", fmt.Sprintf("%d", cols), "-y", fmt.Sprintf("%d", rows),
 		"-c", home,
 		m.shell)
@@ -45,7 +58,7 @@ func (m *Manager) Attach(sessionID string, cols, rows uint16) (*Session, error) 
 	name := sessionPrefix + sessionID
 
 	if !m.tmuxSessionExists(name) {
-		cmd := exec.Command("tmux", "new-session", "-d", "-s", name,
+		cmd := m.tmuxCmd("new-session", "-d", "-s", name,
 			"-x", fmt.Sprintf("%d", cols), "-y", fmt.Sprintf("%d", rows),
 			m.shell)
 		if out, err := cmd.CombinedOutput(); err != nil {
@@ -53,7 +66,7 @@ func (m *Manager) Attach(sessionID string, cols, rows uint16) (*Session, error) 
 		}
 	}
 
-	sess, err := newSession(name, cols, rows)
+	sess, err := newSession(m.configPath, name, cols, rows)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +87,7 @@ func (m *Manager) Detach(sessionID string) {
 func (m *Manager) Resize(sessionID string, cols, rows uint16) error {
 	name := sessionPrefix + sessionID
 
-	cmd := exec.Command("tmux", "resize-window", "-t", name,
+	cmd := m.tmuxCmd("resize-window", "-t", name,
 		"-x", fmt.Sprintf("%d", cols), "-y", fmt.Sprintf("%d", rows))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("tmux resize: %w: %s", err, string(out))
@@ -86,13 +99,13 @@ func (m *Manager) KillSession(sessionID string) error {
 	m.Detach(sessionID)
 
 	name := sessionPrefix + sessionID
-	cmd := exec.Command("tmux", "kill-session", "-t", name)
+	cmd := m.tmuxCmd("kill-session", "-t", name)
 	cmd.Run()
 	return nil
 }
 
 func (m *Manager) ListTmuxSessions() ([]string, error) {
-	cmd := exec.Command("tmux", "list-sessions", "-F", "#{session_name}")
+	cmd := m.tmuxCmd("list-sessions", "-F", "#{session_name}")
 	out, err := cmd.Output()
 	if err != nil {
 		if strings.Contains(err.Error(), "no server running") ||
@@ -123,8 +136,17 @@ func (m *Manager) Shutdown() {
 }
 
 func (m *Manager) tmuxSessionExists(name string) bool {
-	cmd := exec.Command("tmux", "has-session", "-t", name)
+	cmd := m.tmuxCmd("has-session", "-t", name)
 	return cmd.Run() == nil
+}
+
+// `-f` is honoured only on the command that starts the server; subsequent invocations ignore it.
+func (m *Manager) tmuxCmd(args ...string) *exec.Cmd {
+	if m.configPath != "" {
+		full := append([]string{"-f", m.configPath}, args...)
+		return exec.Command("tmux", full...)
+	}
+	return exec.Command("tmux", args...)
 }
 
 func detectShell() string {
@@ -134,4 +156,24 @@ func detectShell() string {
 		}
 	}
 	return "/bin/sh"
+}
+
+// Writes tmux.conf if missing so users can edit it without us clobbering it on next launch.
+func ensureTmuxConfig() (string, error) {
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("user config dir: %w", err)
+	}
+	dir := filepath.Join(base, "lociterm")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("mkdir %s: %w", dir, err)
+	}
+	path := filepath.Join(dir, "tmux.conf")
+	if _, err := os.Stat(path); err == nil {
+		return path, nil
+	}
+	if err := os.WriteFile(path, []byte(tmuxConfigContents), 0o644); err != nil {
+		return "", fmt.Errorf("write %s: %w", path, err)
+	}
+	return path, nil
 }
