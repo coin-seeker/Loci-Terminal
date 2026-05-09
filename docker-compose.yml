@@ -5,7 +5,9 @@ services:
       - "8080:8080"
     volumes:
       - ghostterm-data:/data
+      - ghostterm-home:/home/ghostterm
     restart: unless-stopped
 
 volumes:
   ghostterm-data:
+  ghostterm-home:
