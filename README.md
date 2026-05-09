@@ -1,6 +1,12 @@
-# LociTerm
+<p align="center">
+  <img src="frontend/public/icon-512.png?v=2" alt="LociTerm" width="128" />
+</p>
 
-[한국어](README.ko.md) | [中文](README.zh-CN.md) | **English**
+<h1 align="center">LociTerm</h1>
+
+<p align="center">
+  <a href="README.ko.md">한국어</a> · <a href="README.zh-CN.md">中文</a> · <strong>English</strong>
+</p>
 
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8.svg?logo=go)](https://go.dev/)
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg?logo=react)](https://react.dev/)
@@ -11,6 +17,22 @@
 > Open your machine's terminal in any browser — desktop or mobile — close the tab, come back hours later, and find every process exactly where you left it.
 
 [Quick Start](#quick-start) • [Usage Guide](#usage-guide) • [Deployment](#deployment) • [Architecture](#architecture) • [Troubleshooting](#troubleshooting)
+
+---
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/desktop.png?v=2" alt="LociTerm desktop UI — sidebar, tab bar, and persistent terminal" width="820" />
+  <br />
+  <em>Desktop — workspaces, tab bar, and a tmux-backed terminal panel.</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/mobile.png?v=2" alt="LociTerm mobile UI — collapsible sidebar with dedicated input bar" width="320" />
+  <br />
+  <em>Mobile — collapsible sidebar, IME-safe input bar, on-screen modifier keys.</em>
+</p>
 
 ---
 

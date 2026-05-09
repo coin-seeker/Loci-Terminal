@@ -1,6 +1,12 @@
-# LociTerm
+<p align="center">
+  <img src="frontend/public/icon-512.png?v=2" alt="LociTerm" width="128" />
+</p>
 
-[English](README.md) | [中文](README.zh-CN.md) | **한국어**
+<h1 align="center">LociTerm</h1>
+
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.zh-CN.md">中文</a> · <strong>한국어</strong>
+</p>
 
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8.svg?logo=go)](https://go.dev/)
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg?logo=react)](https://react.dev/)
@@ -11,6 +17,22 @@
 > 데스크톱이든 모바일이든 브라우저에서 내 머신의 터미널을 열고, 탭을 닫았다 몇 시간 뒤 다시 열어도 모든 프로세스가 그대로 살아 있습니다.
 
 [빠른 시작](#빠른-시작) • [사용법](#사용법) • [배포](#배포) • [아키텍처](#아키텍처) • [트러블슈팅](#트러블슈팅)
+
+---
+
+## 스크린샷
+
+<p align="center">
+  <img src="docs/screenshots/desktop.png?v=2" alt="LociTerm 데스크톱 UI — 사이드바, 탭 바, 영구 터미널" width="820" />
+  <br />
+  <em>데스크톱 — 워크스페이스, 탭 바, tmux 기반 영구 터미널 패널.</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/mobile.png?v=2" alt="LociTerm 모바일 UI — 접히는 사이드바와 전용 입력 바" width="320" />
+  <br />
+  <em>모바일 — 접히는 사이드바, IME 안전 입력 바, 화면 내 보조 키.</em>
+</p>
 
 ---
 

@@ -1,6 +1,12 @@
-# LociTerm
+<p align="center">
+  <img src="frontend/public/icon-512.png?v=2" alt="LociTerm" width="128" />
+</p>
 
-[English](README.md) | **中文** | [한국어](README.ko.md)
+<h1 align="center">LociTerm</h1>
+
+<p align="center">
+  <a href="README.md">English</a> · <strong>中文</strong> · <a href="README.ko.md">한국어</a>
+</p>
 
 [![Go](https://img.shields.io/badge/Go-1.22+-00ADD8.svg?logo=go)](https://go.dev/)
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg?logo=react)](https://react.dev/)
@@ -11,6 +17,22 @@
 > 在桌面或移动端浏览器中打开主机终端 — 关闭标签页，几小时后再回来，所有进程依然保留在你离开时的状态。
 
 [快速开始](#快速开始) • [使用指南](#使用指南) • [部署](#部署) • [架构](#架构) • [故障排查](#故障排查)
+
+---
+
+## 截图
+
+<p align="center">
+  <img src="docs/screenshots/desktop.png?v=2" alt="LociTerm 桌面 UI — 侧边栏、标签栏与持久化终端" width="820" />
+  <br />
+  <em>桌面端 — 工作区、标签栏与基于 tmux 的持久化终端面板。</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/mobile.png?v=2" alt="LociTerm 移动 UI — 可折叠侧边栏与专用输入栏" width="320" />
+  <br />
+  <em>移动端 — 可折叠侧边栏、IME 安全输入栏、屏幕内辅助键。</em>
+</p>
 
 ---
 
