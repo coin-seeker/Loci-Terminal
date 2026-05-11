@@ -53,14 +53,12 @@ function createInstance(theme: ITheme): TerminalInstance {
     cursorStyle: 'block',
     allowProposedApi: true,
     scrollback: 10000,
-    // xterm's default scrollSensitivity is 1 (one line per wheel tick),
-    // which feels sluggish on modern trackpads that emit many small deltas.
-    // 3 lines/tick + Alt-held fast-scroll at 5x matches VS Code / iTerm feel.
-    // smoothScrollDuration: 0 disables xterm's tweened scroll so the viewport
-    // reacts on the same frame as the wheel event.
-    scrollSensitivity: 3,
-    fastScrollSensitivity: 5,
-    smoothScrollDuration: 0,
+    // xterm only scrolls in whole-row units (~17px steps). Without easing,
+    // trackpad swipes feel choppy because every event snaps to a row boundary
+    // instantly. 125ms tweens the snap so the row granularity is no longer
+    // visible to the eye. (Sensitivity stays at xterm's default of 1 row/tick
+    // so small trackpad deltas don't blow past several rows per event.)
+    smoothScrollDuration: 125,
   });
   const fitAddon = new FitAddon();
   terminal.loadAddon(fitAddon);
