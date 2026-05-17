@@ -55,7 +55,7 @@ func newTestManager(t *testing.T) *Manager {
 
 func killAllLtSessions(m *Manager) {
 	out, _ := m.tmuxCmd("list-sessions", "-F", "#{session_name}").Output()
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		if strings.HasPrefix(line, sessionPrefix) {
 			m.tmuxCmd("kill-session", "-t", line).Run()
 		}
@@ -251,12 +251,10 @@ func TestDetach_ConcurrentStaleCallsDoNotClobberActive(t *testing.T) {
 
 	// Many stale Detach calls referencing the first (already orphaned) session.
 	var wg sync.WaitGroup
-	for i := 0; i < 16; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 16 {
+		wg.Go(func() {
 			m.Detach(id, first.Session)
-		}()
+		})
 	}
 	wg.Wait()
 

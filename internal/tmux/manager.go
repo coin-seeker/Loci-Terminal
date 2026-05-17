@@ -207,9 +207,8 @@ func (m *Manager) ListTmuxSessions() ([]string, error) {
 	}
 
 	var sessions []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if strings.HasPrefix(line, sessionPrefix) {
-			id := strings.TrimPrefix(line, sessionPrefix)
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		if id, ok := strings.CutPrefix(line, sessionPrefix); ok {
 			sessions = append(sessions, id)
 		}
 	}
