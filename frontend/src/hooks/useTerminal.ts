@@ -18,6 +18,7 @@ interface TerminalInstance {
   terminal: Terminal;
   fitAddon: FitAddon;
   ws: WebSocket | null;
+  connecting: boolean;
   webgl: WebglAddon | null;
   reconnectTimer: number | undefined;
   listenersBound: boolean;
@@ -68,6 +69,7 @@ function createInstance(theme: ITheme): TerminalInstance {
     terminal,
     fitAddon,
     ws: null,
+    connecting: false,
     webgl: null,
     reconnectTimer: undefined,
     listenersBound: false,
@@ -159,12 +161,69 @@ function bindInputListeners(inst: TerminalInstance): void {
   });
 }
 
-function connectWebSocket(inst: TerminalInstance, sid: string): void {
+interface WebSocketTicketResponse {
+  ticket: string;
+}
+
+function isWebSocketTicketResponse(value: unknown): value is WebSocketTicketResponse {
+  return typeof value === 'object' && value !== null && 'ticket' in value && typeof value.ticket === 'string';
+}
+
+async function requestWebSocketTicket(): Promise<string> {
+  const res = await fetch('/api/v1/ws-ticket', {
+    method: 'POST',
+    credentials: 'same-origin',
+  });
+  if (!res.ok) {
+    throw new Error(`failed to request WebSocket ticket: ${res.status}`);
+  }
+
+  const data: unknown = await res.json();
+  if (!isWebSocketTicketResponse(data)) {
+    throw new Error('invalid WebSocket ticket response');
+  }
+  return data.ticket;
+}
+
+function scheduleReconnect(inst: TerminalInstance, sid: string): void {
+  clearTimeout(inst.reconnectTimer);
+  const delay = nextReconnectDelay(inst.reconnectAttempts);
+  inst.reconnectAttempts++;
+  inst.reconnectTimer = window.setTimeout(() => {
+    if (instances.has(sid)) {
+      void connectWebSocket(inst, sid);
+    }
+  }, delay);
+}
+
+async function connectWebSocket(inst: TerminalInstance, sid: string): Promise<void> {
+  if (inst.connecting || inst.ws?.readyState === WebSocket.CONNECTING || inst.ws?.readyState === WebSocket.OPEN) {
+    return;
+  }
+
+  inst.connecting = true;
+
+  let ticket: string;
+  try {
+    ticket = await requestWebSocketTicket();
+  } catch (err) {
+    inst.connecting = false;
+    console.warn(err);
+    scheduleReconnect(inst, sid);
+    return;
+  }
+
+  if (!instances.has(sid)) {
+    inst.connecting = false;
+    return;
+  }
+
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(`${protocol}//${window.location.host}/api/v1/ws/terminal/${sid}`);
+  const ws = new WebSocket(`${protocol}//${window.location.host}/api/v1/ws/terminal/${sid}?ticket=${encodeURIComponent(ticket)}`);
   ws.binaryType = 'arraybuffer';
 
   ws.onopen = () => {
+    inst.connecting = false;
     inst.reconnectAttempts = 0;
     inst.fitAddon.fit();
     const dims = inst.fitAddon.proposeDimensions();
@@ -197,14 +256,12 @@ function connectWebSocket(inst: TerminalInstance, sid: string): void {
   };
 
   ws.onclose = () => {
-    clearTimeout(inst.reconnectTimer);
-    const delay = nextReconnectDelay(inst.reconnectAttempts);
-    inst.reconnectAttempts++;
-    inst.reconnectTimer = window.setTimeout(() => {
-      if (instances.has(sid)) {
-        connectWebSocket(inst, sid);
-      }
-    }, delay);
+    inst.connecting = false;
+    scheduleReconnect(inst, sid);
+  };
+
+  ws.onerror = () => {
+    inst.connecting = false;
   };
 
   inst.ws = ws;
@@ -271,7 +328,7 @@ export function useTerminal({ sessionId, containerRef, theme }: UseTerminalOptio
     }
 
     if (!inst.ws || inst.ws.readyState === WebSocket.CLOSED) {
-      connectWebSocket(inst, sessionId);
+      void connectWebSocket(inst, sessionId);
     }
 
     previousSessionIdRef.current = sessionId;

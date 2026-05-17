@@ -54,6 +54,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/auth/setup", ah.Setup)
 	mux.HandleFunc("POST /api/v1/auth/login", ah.Login)
 	mux.HandleFunc("POST /api/v1/auth/logout", ah.Logout)
+	mux.HandleFunc("POST /api/v1/ws-ticket", s.requireAuth(s.handleWebSocketTicket))
 
 	killTmux := func(sessionID string) {
 		s.tmuxMgr.KillSession(sessionID)
@@ -91,14 +92,41 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		token := s.auth.getTokenFromRequest(r)
-		if token == "" || !s.auth.validateSession(token) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error":"unauthorized"}`))
+		if token != "" && s.auth.validateSession(token) {
+			next(w, r)
 			return
 		}
-		next(w, r)
+
+		if isWebSocketUpgrade(r) && s.auth.consumeWebSocketTicket(r.URL.Query().Get("ticket")) {
+			next(w, r)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"unauthorized"}`))
 	}
+}
+
+func (s *Server) handleWebSocketTicket(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"ticket": s.auth.createWebSocketTicket(),
+	})
+}
+
+func isWebSocketUpgrade(r *http.Request) bool {
+	return strings.EqualFold(r.Header.Get("Upgrade"), "websocket") &&
+		headerHasToken(r.Header.Get("Connection"), "upgrade")
+}
+
+func headerHasToken(header, token string) bool {
+	for part := range strings.SplitSeq(header, ",") {
+		if strings.EqualFold(strings.TrimSpace(part), token) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

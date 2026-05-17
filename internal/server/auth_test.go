@@ -105,3 +105,37 @@ func TestSessionCookie(t *testing.T) {
 		}
 	})
 }
+
+func TestWebSocketTickets(t *testing.T) {
+	am := newAuthManager()
+
+	t.Run("consume valid ticket once", func(t *testing.T) {
+		ticket := am.createWebSocketTicket()
+		if ticket == "" {
+			t.Fatal("ticket should not be empty")
+		}
+		if !am.consumeWebSocketTicket(ticket) {
+			t.Fatal("fresh ticket should be valid")
+		}
+		if am.consumeWebSocketTicket(ticket) {
+			t.Fatal("ticket should be single-use")
+		}
+	})
+
+	t.Run("expired ticket rejected", func(t *testing.T) {
+		ticket := am.createWebSocketTicket()
+		am.mu.Lock()
+		am.wsTickets[ticket] = time.Now().Add(-1 * time.Hour)
+		am.mu.Unlock()
+
+		if am.consumeWebSocketTicket(ticket) {
+			t.Fatal("expired ticket should be rejected")
+		}
+	})
+
+	t.Run("empty ticket rejected", func(t *testing.T) {
+		if am.consumeWebSocketTicket("") {
+			t.Fatal("empty ticket should be rejected")
+		}
+	})
+}
