@@ -1,14 +1,16 @@
 .PHONY: dev-frontend dev-backend build clean test test-go test-frontend
 
 FRONTEND_DIR = frontend
-GO_BIN = /opt/homebrew/bin/go
+GO_BIN ?= go
 BUILD_DIR = cmd/lociterm
+HOST ?= 127.0.0.1
+PORT ?= 8080
 
 dev-frontend:
 	cd $(FRONTEND_DIR) && npm run dev
 
 dev-backend:
-	$(GO_BIN) run ./$(BUILD_DIR) --port 8080
+	$(GO_BIN) run ./$(BUILD_DIR) --host $(HOST) --port $(PORT)
 
 build: build-frontend build-backend
 
