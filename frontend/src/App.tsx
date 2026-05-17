@@ -10,7 +10,9 @@ import { useMediaQuery, MOBILE_QUERY } from './hooks/useMediaQuery';
 type AuthState = 'loading' | 'needs-setup' | 'needs-login' | 'authenticated';
 
 export default function App() {
-  const { initialized, init, pollActive } = useAppStore();
+  const initialized = useAppStore((s) => s.initialized);
+  const init = useAppStore((s) => s.init);
+  const pollActive = useAppStore((s) => s.pollActive);
   const { ui } = useEffectiveTheme();
   const isMobile = useMediaQuery(MOBILE_QUERY);
 

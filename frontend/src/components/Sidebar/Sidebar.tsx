@@ -26,16 +26,14 @@ const themeLabel: Record<ThemeMode, string> = {
 };
 
 export function Sidebar({ onCloseMobile }: SidebarProps) {
-  const {
-    workspaces,
-    sessions,
-    activeWorkspaceId,
-    activeSessionByWorkspace,
-    setActiveWorkspace,
-    createWorkspace,
-    deleteWorkspace,
-    renameWorkspace,
-  } = useAppStore();
+  const workspaces = useAppStore((s) => s.workspaces);
+  const sessions = useAppStore((s) => s.sessions);
+  const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
+  const activeSessionByWorkspace = useAppStore((s) => s.activeSessionByWorkspace);
+  const setActiveWorkspace = useAppStore((s) => s.setActiveWorkspace);
+  const createWorkspace = useAppStore((s) => s.createWorkspace);
+  const deleteWorkspace = useAppStore((s) => s.deleteWorkspace);
+  const renameWorkspace = useAppStore((s) => s.renameWorkspace);
   const sessionActivity = useAppStore((s) => s.sessionActivity);
   const { ui, mode, cycleMode } = useEffectiveTheme();
 

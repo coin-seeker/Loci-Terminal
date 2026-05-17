@@ -7,14 +7,12 @@ interface TabBarProps {
 }
 
 export function TabBar({ showMenuButton, onMenuClick }: TabBarProps) {
-  const {
-    activeWorkspaceId,
-    activeSessionId,
-    sessions,
-    setActiveSession,
-    createSession,
-    deleteSession,
-  } = useAppStore();
+  const activeWorkspaceId = useAppStore((s) => s.activeWorkspaceId);
+  const activeSessionId = useAppStore((s) => s.activeSessionId);
+  const sessions = useAppStore((s) => s.sessions);
+  const setActiveSession = useAppStore((s) => s.setActiveSession);
+  const createSession = useAppStore((s) => s.createSession);
+  const deleteSession = useAppStore((s) => s.deleteSession);
   const sessionActivity = useAppStore((s) => s.sessionActivity);
   const { ui } = useEffectiveTheme();
 
