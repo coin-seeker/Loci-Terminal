@@ -4,12 +4,13 @@ import (
 	"context"
 	"embed"
 	"flag"
-	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -21,6 +22,7 @@ var frontendFS embed.FS
 
 func main() {
 	port := flag.Int("port", 8080, "server port")
+	host := flag.String("host", "127.0.0.1", "server host")
 	dataDir := flag.String("data-dir", "./data", "data directory for SQLite database")
 	flag.Parse()
 
@@ -35,13 +37,14 @@ func main() {
 
 	srv := server.New(distFS, *dataDir)
 
+	addr := net.JoinHostPort(*host, strconv.Itoa(*port))
 	httpServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", *port),
+		Addr:    addr,
 		Handler: srv.Handler(),
 	}
 
 	go func() {
-		log.Printf("LociTerm listening on http://localhost:%d", *port)
+		log.Printf("LociTerm listening on http://%s", addr)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server error: %v", err)
 		}
