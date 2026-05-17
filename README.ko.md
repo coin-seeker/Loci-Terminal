@@ -207,7 +207,7 @@ LociTerm은 두 가지 배포 모드가 있습니다. 하나를 고르세요:
 
 웹 터미널이 직접 로그인한 것과 동일한 환경을 가집니다 — 같은 파일, 같은 도구, 같은 환경.
 
-**사전 요구사항:** Go 1.22+, Node.js 20+, tmux, git
+**사전 요구사항:** Go 1.26+, Node.js 20+, npm, tmux, git
 
 ```bash
 git clone https://github.com/Younkyum/Loci-Terminal.git
@@ -226,7 +226,9 @@ bash deploy/install.sh
 
 | 플래그 | 설명 | 기본값 |
 |---|---|---|
+| `--host HOST` | 서버 호스트 | `127.0.0.1` |
 | `--port PORT` | 서버 포트 | `8080` |
+| `--data-dir DIR` | SQLite 데이터베이스 디렉토리 | Linux: `/var/lib/lociterm`, macOS: `~/.local/share/lociterm` |
 | `--user USER` | 실행할 시스템 사용자 | 현재 사용자 |
 | `--help` | 도움말 표시 | — |
 
@@ -238,8 +240,8 @@ systemctl status lociterm@$(whoami)
 systemctl restart lociterm@$(whoami)
 journalctl -u lociterm@$(whoami) -f
 
-# 포트 변경
-sudo bash deploy/install.sh --port 3000
+# 호스트/포트/데이터 디렉토리 변경
+sudo bash deploy/install.sh --host 127.0.0.1 --port 3000 --data-dir /var/lib/lociterm
 
 # 제거 (데이터 디렉토리 유지)
 sudo bash deploy/uninstall.sh
@@ -268,7 +270,7 @@ bash deploy/uninstall.sh
 
 #### Cloudflare Tunnel
 
-별도 설정 없이 동작합니다. 터널을 `http://localhost:8080`에 연결하면 Cloudflare가 HTTPS와 WebSocket 프록시를 자동 처리합니다.
+별도 설정 없이 동작합니다. LociTerm은 loopback에 바인딩한 상태로 두고, 터널을 `http://localhost:8080`에 연결하면 Cloudflare가 HTTPS와 WebSocket 프록시를 자동 처리합니다.
 
 ```bash
 cloudflared tunnel --url http://localhost:8080
@@ -286,6 +288,8 @@ cd Loci-Terminal
 docker compose up -d --build
 # http://localhost:8080 접속
 ```
+
+compose 파일은 기본적으로 `127.0.0.1:8080`에만 게시합니다. 호스트 포트를 바꾸려면 `LOCITERM_PORT=3000`을 지정하세요.
 
 **컨테이너 재시작 시 유지되는 것:**
 - `/home/lociterm` → 설치한 도구, 프로젝트 파일, 셸 설정 (볼륨 `lociterm-home`)
@@ -309,13 +313,14 @@ docker compose exec lociterm bash    # 컨테이너 내부 셸 접속
 
 | 플래그 | 설명 | 기본값 |
 |---|---|---|
+| `--host` | 서버 호스트 | `127.0.0.1` |
 | `--port` | 서버 포트 | `8080` |
 | `--data-dir` | SQLite 데이터베이스 디렉토리 | `./data` |
 
 직접 실행:
 
 ```bash
-./lociterm --port 9000 --data-dir /tmp/lociterm-data
+./lociterm --host 127.0.0.1 --port 9000 --data-dir /tmp/lociterm-data
 ```
 
 ---

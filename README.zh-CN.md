@@ -207,7 +207,7 @@ LociTerm 有两种部署模式，二选一：
 
 Web 终端将拥有与直接登录主机相同的访问权限 — 相同的文件、工具与环境。
 
-**前置条件：** Go 1.22+, Node.js 20+, tmux, git
+**前置条件：** Go 1.26+, Node.js 20+, npm, tmux, git
 
 ```bash
 git clone https://github.com/Younkyum/Loci-Terminal.git
@@ -226,7 +226,9 @@ bash deploy/install.sh
 
 | 参数 | 说明 | 默认值 |
 |---|---|---|
+| `--host HOST` | 服务器主机 | `127.0.0.1` |
 | `--port PORT` | 服务器端口 | `8080` |
+| `--data-dir DIR` | SQLite 数据库目录 | Linux: `/var/lib/lociterm`, macOS: `~/.local/share/lociterm` |
 | `--user USER` | 运行用户 | 当前用户 |
 | `--help` | 显示帮助 | — |
 
@@ -238,8 +240,8 @@ systemctl status lociterm@$(whoami)
 systemctl restart lociterm@$(whoami)
 journalctl -u lociterm@$(whoami) -f
 
-# 自定义端口
-sudo bash deploy/install.sh --port 3000
+# 自定义主机/端口/数据目录
+sudo bash deploy/install.sh --host 127.0.0.1 --port 3000 --data-dir /var/lib/lociterm
 
 # 卸载（保留数据目录）
 sudo bash deploy/uninstall.sh
@@ -268,7 +270,7 @@ bash deploy/uninstall.sh
 
 #### Cloudflare Tunnel
 
-开箱即用。将隧道指向 `http://localhost:8080`，Cloudflare 自动处理 HTTPS 与 WebSocket 代理。
+开箱即用。保持 LociTerm 绑定到 loopback，并将隧道指向 `http://localhost:8080`，Cloudflare 会自动处理 HTTPS 与 WebSocket 代理。
 
 ```bash
 cloudflared tunnel --url http://localhost:8080
@@ -286,6 +288,8 @@ cd Loci-Terminal
 docker compose up -d --build
 # 访问 http://localhost:8080
 ```
+
+compose 文件默认只发布到 `127.0.0.1:8080`。如需修改主机端口，请设置 `LOCITERM_PORT=3000`。
 
 **容器重启后保留：**
 - `/home/lociterm` → 已安装的工具、项目文件、Shell 配置（卷 `lociterm-home`）
@@ -309,13 +313,14 @@ docker compose exec lociterm bash    # 进入容器 shell
 
 | 参数 | 说明 | 默认值 |
 |---|---|---|
+| `--host` | 服务器主机 | `127.0.0.1` |
 | `--port` | 服务器端口 | `8080` |
 | `--data-dir` | SQLite 数据库目录 | `./data` |
 
 直接运行：
 
 ```bash
-./lociterm --port 9000 --data-dir /tmp/lociterm-data
+./lociterm --host 127.0.0.1 --port 9000 --data-dir /tmp/lociterm-data
 ```
 
 ---

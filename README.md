@@ -207,7 +207,7 @@ LociTerm has two deployment modes. Pick one:
 
 The web terminal will have the same access as logging into the machine directly — same files, same tools, same environment.
 
-**Prerequisites:** Go 1.22+, Node.js 20+, tmux, git
+**Prerequisites:** Go 1.26+, Node.js 20+, npm, tmux, git
 
 ```bash
 git clone https://github.com/Younkyum/Loci-Terminal.git
@@ -226,7 +226,9 @@ The installer detects the OS, builds from source, installs the binary to `/usr/l
 
 | Flag | Description | Default |
 |---|---|---|
+| `--host HOST` | Server host | `127.0.0.1` |
 | `--port PORT` | Server port | `8080` |
+| `--data-dir DIR` | SQLite database directory | Linux: `/var/lib/lociterm`, macOS: `~/.local/share/lociterm` |
 | `--user USER` | System user to run as | current user |
 | `--help` | Show help | — |
 
@@ -238,8 +240,8 @@ systemctl status lociterm@$(whoami)
 systemctl restart lociterm@$(whoami)
 journalctl -u lociterm@$(whoami) -f
 
-# Custom port
-sudo bash deploy/install.sh --port 3000
+# Custom host/port/data dir
+sudo bash deploy/install.sh --host 127.0.0.1 --port 3000 --data-dir /var/lib/lociterm
 
 # Uninstall (keeps data dir)
 sudo bash deploy/uninstall.sh
@@ -268,7 +270,7 @@ Data dir: `~/.local/share/lociterm` · Logs: `~/Library/Logs/lociterm/` · plist
 
 #### Cloudflare Tunnel
 
-Works out of the box. Point your tunnel at `http://localhost:8080` — Cloudflare handles HTTPS and WebSocket proxying automatically.
+Works out of the box. Keep LociTerm bound to loopback and point your tunnel at `http://localhost:8080` — Cloudflare handles HTTPS and WebSocket proxying automatically.
 
 ```bash
 cloudflared tunnel --url http://localhost:8080
@@ -286,6 +288,8 @@ cd Loci-Terminal
 docker compose up -d --build
 # Open http://localhost:8080
 ```
+
+The compose file publishes `127.0.0.1:8080` by default. Set `LOCITERM_PORT=3000` to change the host port.
 
 **Persists across container restarts:**
 - `/home/lociterm` → installed tools, project files, shell configs (volume `lociterm-home`)
@@ -309,13 +313,14 @@ docker compose exec lociterm bash    # shell into the container
 
 | Flag | Description | Default |
 |---|---|---|
+| `--host` | Server host | `127.0.0.1` |
 | `--port` | Server port | `8080` |
 | `--data-dir` | SQLite database directory | `./data` |
 
 Run directly:
 
 ```bash
-./lociterm --port 9000 --data-dir /tmp/lociterm-data
+./lociterm --host 127.0.0.1 --port 9000 --data-dir /tmp/lociterm-data
 ```
 
 ---
