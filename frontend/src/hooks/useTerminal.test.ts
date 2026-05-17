@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { renderHook, cleanup } from '@testing-library/react';
+import type { Mock } from 'vitest';
+import { renderHook, cleanup, act, waitFor } from '@testing-library/react';
 import { useRef } from 'react';
 
 // Per-instance spies — captured by the @xterm mocks below and inspected by tests.
@@ -19,7 +20,18 @@ interface FakeTerminal {
   paste: ReturnType<typeof vi.fn>;
 }
 
+interface TerminalDimensions {
+  cols: number;
+  rows: number;
+}
+
+interface FakeFitAddon {
+  fit: Mock<() => void>;
+  proposeDimensions: Mock<() => TerminalDimensions | undefined>;
+}
+
 const created: FakeTerminal[] = [];
+const fitAddons: FakeFitAddon[] = [];
 
 vi.mock('@xterm/xterm', () => {
   let nextId = 0;
@@ -55,6 +67,9 @@ vi.mock('@xterm/addon-fit', () => ({
   FitAddon: class {
     fit = vi.fn();
     proposeDimensions = vi.fn(() => ({ cols: 80, rows: 24 }));
+    constructor() {
+      fitAddons.push(this as unknown as FakeFitAddon);
+    }
   },
 }));
 
@@ -71,6 +86,7 @@ vi.mock('@xterm/addon-web-links', () => ({
 }));
 
 class FakeWebSocket {
+  static CONNECTING = 0;
   static OPEN = 1;
   static CLOSED = 3;
   readyState = FakeWebSocket.OPEN;
@@ -80,15 +96,26 @@ class FakeWebSocket {
   onclose: (() => void) | null = null;
   send = vi.fn();
   close = vi.fn();
-  constructor(public url: string) {}
+  constructor(public url: string) {
+    sockets.push(this);
+  }
 }
+
+const sockets: FakeWebSocket[] = [];
 
 class FakeResizeObserver {
   observe = vi.fn();
   disconnect = vi.fn();
   unobserve = vi.fn();
-  constructor(public cb: ResizeObserverCallback) {}
+  constructor(public cb: ResizeObserverCallback) {
+    resizeObservers.push(this);
+  }
+  trigger(): void {
+    this.cb([], this as unknown as ResizeObserver);
+  }
 }
+
+const resizeObservers: FakeResizeObserver[] = [];
 
 // useTerminal stores instances in a module-level Map; reset between tests.
 import { useTerminal, disposeTerminal, nextReconnectDelay } from './useTerminal';
@@ -110,12 +137,55 @@ function harness(sessionId: string | null) {
   );
 }
 
+function installBrowserFakes(): void {
+  created.length = 0;
+  fitAddons.length = 0;
+  sockets.length = 0;
+  resizeObservers.length = 0;
+  (globalThis as unknown as { WebSocket: typeof FakeWebSocket }).WebSocket = FakeWebSocket;
+  (window as unknown as { WebSocket: typeof FakeWebSocket }).WebSocket = FakeWebSocket;
+  (globalThis as unknown as { ResizeObserver: typeof FakeResizeObserver }).ResizeObserver =
+    FakeResizeObserver;
+  (window as unknown as { ResizeObserver: typeof FakeResizeObserver }).ResizeObserver =
+    FakeResizeObserver;
+  const fetchTicket = vi.fn(() =>
+    Promise.resolve({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ ticket: 'ticket' }),
+    }),
+  );
+  vi.stubGlobal('fetch', fetchTicket);
+  (window as unknown as { fetch: typeof fetchTicket }).fetch = fetchTicket;
+}
+
+async function settleSocketSetup(): Promise<void> {
+  await act(async () => {
+    for (let i = 0; i < 5; i++) {
+      await Promise.resolve();
+    }
+  });
+}
+
+async function latestSocket(): Promise<FakeWebSocket> {
+  await settleSocketSetup();
+  await waitFor(() => {
+    expect(sockets).toHaveLength(1);
+  });
+  const socket = sockets[sockets.length - 1];
+  if (!socket) throw new Error('expected a WebSocket to be created');
+  return socket;
+}
+
+function latestResizeObserver(): FakeResizeObserver {
+  const resizeObserver = resizeObservers[resizeObservers.length - 1];
+  if (!resizeObserver) throw new Error('expected a ResizeObserver to be created');
+  return resizeObserver;
+}
+
 describe('useTerminal — VS Code detach/attach pattern', () => {
   beforeEach(() => {
-    created.length = 0;
-    (globalThis as unknown as { WebSocket: typeof FakeWebSocket }).WebSocket = FakeWebSocket;
-    (globalThis as unknown as { ResizeObserver: typeof FakeResizeObserver }).ResizeObserver =
-      FakeResizeObserver;
+    installBrowserFakes();
   });
 
   afterEach(() => {
@@ -123,6 +193,8 @@ describe('useTerminal — VS Code detach/attach pattern', () => {
     // Drain the module-level instance cache so each test starts fresh.
     disposeTerminal('A');
     disposeTerminal('B');
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it('opens a terminal on first mount and does not call refresh', () => {
@@ -167,17 +239,87 @@ describe('useTerminal — VS Code detach/attach pattern', () => {
   });
 });
 
+describe('useTerminal — ResizeObserver debounce and attached gate', () => {
+  beforeEach(() => {
+    installBrowserFakes();
+  });
+
+  afterEach(() => {
+    cleanup();
+    disposeTerminal('R');
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('dedupes same dimensions — ws.send called once after debounce', async () => {
+    harness('R');
+    const socket = await latestSocket();
+    const fitAddon = fitAddons[0];
+    if (!fitAddon) throw new Error('expected a FitAddon to be created');
+
+    socket.onopen?.call(socket);
+    fitAddon.proposeDimensions.mockReturnValue({ cols: 100, rows: 30 });
+    socket.onmessage?.({ data: JSON.stringify({ type: 'attached' }) });
+    socket.send.mockClear();
+    fitAddon.proposeDimensions.mockReturnValue({ cols: 80, rows: 24 });
+
+    vi.useFakeTimers();
+    const resizeObserver = latestResizeObserver();
+    resizeObserver.trigger();
+    resizeObserver.trigger();
+    resizeObserver.trigger();
+
+    expect(socket.send).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(79);
+    expect(socket.send).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+
+    expect(socket.send).toHaveBeenCalledTimes(1);
+    expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: 'resize', cols: 80, rows: 24 }));
+  });
+
+  it('zero-size guard — ws.send not called for 0x0', async () => {
+    harness('R');
+    const socket = await latestSocket();
+    const fitAddon = fitAddons[0];
+    if (!fitAddon) throw new Error('expected a FitAddon to be created');
+    fitAddon.proposeDimensions.mockReturnValue({ cols: 0, rows: 0 });
+
+    socket.onopen?.call(socket);
+    socket.onmessage?.({ data: JSON.stringify({ type: 'attached' }) });
+    socket.send.mockClear();
+
+    vi.useFakeTimers();
+    latestResizeObserver().trigger();
+    vi.advanceTimersByTime(80);
+
+    expect(socket.send).not.toHaveBeenCalled();
+  });
+
+  it('initial resize is gated by the attached message', async () => {
+    harness('R');
+    const socket = await latestSocket();
+
+    socket.onopen?.call(socket);
+    expect(socket.send).not.toHaveBeenCalled();
+
+    socket.onmessage?.({ data: JSON.stringify({ type: 'attached' }) });
+
+    expect(socket.send).toHaveBeenCalledTimes(1);
+    expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: 'resize', cols: 80, rows: 24 }));
+  });
+});
+
 describe('Terminal constructor options', () => {
   beforeEach(() => {
-    created.length = 0;
-    (globalThis as unknown as { WebSocket: typeof FakeWebSocket }).WebSocket = FakeWebSocket;
-    (globalThis as unknown as { ResizeObserver: typeof FakeResizeObserver }).ResizeObserver =
-      FakeResizeObserver;
+    installBrowserFakes();
   });
 
   afterEach(() => {
     cleanup();
     disposeTerminal('S');
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it('uses smoothScrollDuration 0 for instant scroll', () => {

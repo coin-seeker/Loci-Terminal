@@ -21,6 +21,10 @@ interface TerminalInstance {
   connecting: boolean;
   webgl: WebglAddon | null;
   reconnectTimer: number | undefined;
+  lastSentCols: number | undefined;
+  lastSentRows: number | undefined;
+  resizeDebounceTimer: number | undefined;
+  attached: boolean;
   listenersBound: boolean;
   // IME composition state — see bindInputListeners for why these exist.
   composing: boolean;
@@ -71,6 +75,10 @@ function createInstance(theme: ITheme): TerminalInstance {
     connecting: false,
     webgl: null,
     reconnectTimer: undefined,
+    lastSentCols: undefined,
+    lastSentRows: undefined,
+    resizeDebounceTimer: undefined,
+    attached: false,
     listenersBound: false,
     composing: false,
     compositionSuppressUntil: 0,
@@ -224,11 +232,8 @@ async function connectWebSocket(inst: TerminalInstance, sid: string): Promise<vo
   ws.onopen = () => {
     inst.connecting = false;
     inst.reconnectAttempts = 0;
+    inst.attached = false;
     inst.fitAddon.fit();
-    const dims = inst.fitAddon.proposeDimensions();
-    if (dims) {
-      ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
-    }
   };
 
   ws.onmessage = (e) => {
@@ -240,6 +245,13 @@ async function connectWebSocket(inst: TerminalInstance, sid: string): Promise<vo
       try {
         const msg = JSON.parse(e.data);
         if (msg.type === 'attached') {
+          inst.attached = true;
+          const dims = inst.fitAddon.proposeDimensions();
+          if (dims && dims.cols > 0 && dims.rows > 0 && inst.ws?.readyState === WebSocket.OPEN) {
+            inst.lastSentCols = dims.cols;
+            inst.lastSentRows = dims.rows;
+            inst.ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
+          }
           if (msg.recreated) {
             // Backend had to spawn a brand-new tmux session — prior shell is
             // gone. Surface this inline so the user doesn't think they just
@@ -335,16 +347,32 @@ export function useTerminal({ sessionId, containerRef, theme }: UseTerminalOptio
     const resizeObserver = new ResizeObserver(() => {
       const i = instances.get(sessionId);
       if (!i) return;
-      i.fitAddon.fit();
       const dims = i.fitAddon.proposeDimensions();
-      if (dims && i.ws?.readyState === WebSocket.OPEN) {
-        i.ws.send(JSON.stringify({ type: 'resize', cols: dims.cols, rows: dims.rows }));
-      }
+      if (!dims || dims.cols === 0 || dims.rows === 0) return;
+      if (dims.cols === i.lastSentCols && dims.rows === i.lastSentRows) return;
+
+      clearTimeout(i.resizeDebounceTimer);
+      i.resizeDebounceTimer = window.setTimeout(() => {
+        const inst = instances.get(sessionId);
+        if (!inst) return;
+        const d = inst.fitAddon.proposeDimensions();
+        if (!d || d.cols === 0 || d.rows === 0) return;
+        if (d.cols === inst.lastSentCols && d.rows === inst.lastSentRows) return;
+        if (!inst.attached) return;
+
+        inst.fitAddon.fit();
+        if (inst.ws?.readyState === WebSocket.OPEN) {
+          inst.lastSentCols = d.cols;
+          inst.lastSentRows = d.rows;
+          inst.ws.send(JSON.stringify({ type: 'resize', cols: d.cols, rows: d.rows }));
+        }
+      }, 80);
     });
     resizeObserver.observe(container);
 
     return () => {
       resizeObserver.disconnect();
+      clearTimeout(inst.resizeDebounceTimer);
     };
   }, [sessionId, containerRef, activeTheme]);
 
@@ -360,6 +388,7 @@ export function disposeTerminal(sessionId: string): void {
   const inst = instances.get(sessionId);
   if (!inst) return;
   clearTimeout(inst.reconnectTimer);
+  clearTimeout(inst.resizeDebounceTimer);
   inst.ws?.close();
   inst.terminal.dispose();
   instances.delete(sessionId);
