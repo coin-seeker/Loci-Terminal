@@ -1,6 +1,8 @@
 package tmux
 
 import (
+	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -189,6 +191,45 @@ func TestAttach_RecreatedFlag(t *testing.T) {
 		t.Fatalf("second Attach should report Recreated=false (reattached to existing session)")
 	}
 	m.Detach(id, second.Session)
+}
+
+func TestAttach_StartsFreshSessionInHomeDirectory(t *testing.T) {
+	requireTmux(t)
+	m := newTestManager(t)
+	t.Cleanup(func() { killAllLtSessions(m) })
+
+	const id = "home-cwd-id"
+	attach, err := m.Attach(id, 80, 24)
+	if err != nil {
+		t.Fatalf("attach: %v", err)
+	}
+	defer m.Detach(id, attach.Session)
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("home dir: %v", err)
+	}
+	name := sessionPrefix + id
+	out, err := m.tmuxCmd("display-message", "-t", name, "-p", "#{pane_current_path}").Output()
+	if err != nil {
+		t.Fatalf("display cwd: %v", err)
+	}
+	if got := strings.TrimSpace(string(out)); got != home {
+		t.Fatalf("fresh session cwd = %q, want home %q", got, home)
+	}
+}
+
+func TestNewSessionCmdOmitsCwdWhenHomeUnavailable(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	t.Setenv("home", "")
+
+	m := newTestManager(t)
+	cmd := m.newSessionCmd("lt_no-home", 80, 24)
+	args := fmt.Sprint(cmd.Args)
+	if strings.Contains(args, " -c ") {
+		t.Fatalf("newSessionCmd should omit -c when no home dir is available, args=%v", cmd.Args)
+	}
 }
 
 // Ensures Detach is safe to call concurrently from many stale handlers

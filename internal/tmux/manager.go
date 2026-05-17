@@ -44,11 +44,7 @@ func NewManager(dataDir string) *Manager {
 func (m *Manager) CreateSession(sessionID string, cols, rows uint16) error {
 	name := sessionPrefix + sessionID
 
-	home, _ := os.UserHomeDir()
-	cmd := m.tmuxCmd("new-session", "-d", "-s", name,
-		"-x", fmt.Sprintf("%d", cols), "-y", fmt.Sprintf("%d", rows),
-		"-c", home,
-		m.shell)
+	cmd := m.newSessionCmd(name, cols, rows)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("tmux new-session: %w: %s", err, string(out))
 	}
@@ -84,9 +80,7 @@ func (m *Manager) Attach(sessionID string, cols, rows uint16) (*AttachResult, er
 
 	recreated := false
 	if !m.tmuxSessionExists(name) {
-		cmd := m.tmuxCmd("new-session", "-d", "-s", name,
-			"-x", fmt.Sprintf("%d", cols), "-y", fmt.Sprintf("%d", rows),
-			m.shell)
+		cmd := m.newSessionCmd(name, cols, rows)
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return nil, fmt.Errorf("tmux new-session: %w: %s", err, string(out))
 		}
@@ -131,6 +125,18 @@ func (m *Manager) Detach(sessionID string, sess *Session) {
 	// the attach client process is reaped even if the slot was already taken
 	// by a newer handler (which owns its own session and won't be affected).
 	sess.Close()
+}
+
+func (m *Manager) newSessionCmd(name string, cols, rows uint16) *exec.Cmd {
+	args := []string{
+		"new-session", "-d", "-s", name,
+		"-x", fmt.Sprintf("%d", cols), "-y", fmt.Sprintf("%d", rows),
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		args = append(args, "-c", home)
+	}
+	args = append(args, m.shell)
+	return m.tmuxCmd(args...)
 }
 
 func (m *Manager) Resize(sessionID string, cols, rows uint16) error {
