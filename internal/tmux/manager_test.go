@@ -232,6 +232,111 @@ func TestNewSessionCmdOmitsCwdWhenHomeUnavailable(t *testing.T) {
 	}
 }
 
+// TestResizeDedupe ensures repeated Resize calls with identical dimensions
+// shell out to `tmux resize-window` exactly once. ResizeObserver storms in
+// the browser otherwise translate into hundreds of redundant tmux exec()s.
+func TestResizeDedupe(t *testing.T) {
+	m := newTestManager(t)
+
+	const id = "dedupe-id"
+	var calls int
+	m.resizeShellOut = func(name string, cols, rows uint16) error {
+		if name != sessionPrefix+id {
+			t.Errorf("unexpected tmux target name %q", name)
+		}
+		calls++
+		return nil
+	}
+
+	for range 100 {
+		if err := m.Resize(id, 80, 24); err != nil {
+			t.Fatalf("Resize: %v", err)
+		}
+	}
+
+	if calls != 1 {
+		t.Fatalf("expected 1 shell-out for 100 identical Resize calls, got %d", calls)
+	}
+
+	m.mu.RLock()
+	cached, ok := m.lastSize[id]
+	m.mu.RUnlock()
+	if !ok || cached.cols != 80 || cached.rows != 24 {
+		t.Fatalf("lastSize cache state wrong: ok=%v cached=%+v", ok, cached)
+	}
+}
+
+// TestResizeDifferentDimensions confirms only identical dimensions are
+// deduped — every distinct (cols, rows) pair must reach tmux.
+func TestResizeDifferentDimensions(t *testing.T) {
+	m := newTestManager(t)
+
+	const id = "diff-id"
+	var calls int
+	m.resizeShellOut = func(name string, cols, rows uint16) error {
+		calls++
+		return nil
+	}
+
+	dims := []struct{ cols, rows uint16 }{
+		{80, 24}, {100, 30}, {120, 40}, {80, 24}, {120, 40},
+	}
+	for _, d := range dims {
+		if err := m.Resize(id, d.cols, d.rows); err != nil {
+			t.Fatalf("Resize(%d,%d): %v", d.cols, d.rows, err)
+		}
+	}
+
+	// 5 inputs: {80,24},{100,30},{120,40},{80,24},{120,40}
+	// → shell-outs at indices 0,1,2,3,4 (index 3 changes from {120,40} back
+	// to {80,24}, index 4 changes from {80,24} back to {120,40}; both are
+	// distinct from the immediately preceding cached value).
+	if calls != 5 {
+		t.Fatalf("expected 5 shell-outs for 5 distinct-from-previous Resize calls, got %d", calls)
+	}
+}
+
+// TestResizeAfterKillSession verifies KillSession clears the dedupe cache so
+// that re-creating a session with the same ID resizes fresh tmux state and
+// is not silently skipped by a stale cache entry.
+func TestResizeAfterKillSession(t *testing.T) {
+	m := newTestManager(t)
+
+	const id = "kill-cache-id"
+	var calls int
+	m.resizeShellOut = func(name string, cols, rows uint16) error {
+		calls++
+		return nil
+	}
+
+	if err := m.Resize(id, 80, 24); err != nil {
+		t.Fatalf("first Resize: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("first Resize should shell out once, got %d", calls)
+	}
+
+	// KillSession runs `tmux kill-session` which fails harmlessly when no
+	// server is running; we only care that it clears m.lastSize.
+	if err := m.KillSession(id); err != nil {
+		t.Fatalf("KillSession: %v", err)
+	}
+
+	m.mu.RLock()
+	_, stillCached := m.lastSize[id]
+	m.mu.RUnlock()
+	if stillCached {
+		t.Fatalf("KillSession failed to clear lastSize entry for %q", id)
+	}
+
+	if err := m.Resize(id, 80, 24); err != nil {
+		t.Fatalf("post-kill Resize: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("post-kill Resize should shell out again, got total calls = %d", calls)
+	}
+}
+
 // Ensures Detach is safe to call concurrently from many stale handlers
 // against the same ID — none of them must clobber the active session.
 func TestDetach_ConcurrentStaleCallsDoNotClobberActive(t *testing.T) {

@@ -24,6 +24,15 @@ type Manager struct {
 	shell       string
 	configPath  string
 	socketLabel string
+	// lastSize tracks the last (cols, rows) we actually sent to tmux per session.
+	// Skips redundant `tmux resize-window` shell-outs when client sends the same
+	// dimensions repeatedly (common with ResizeObserver storms before the
+	// frontend-side dedupe lands).
+	lastSize map[string]struct{ cols, rows uint16 }
+	// resizeShellOut is the function used to invoke `tmux resize-window`.
+	// Tests override this to count invocations and verify dedupe behaviour
+	// without requiring a live tmux server. nil means "use the real tmux command".
+	resizeShellOut func(name string, cols, rows uint16) error
 }
 
 func NewManager(dataDir string) *Manager {
@@ -38,6 +47,7 @@ func NewManager(dataDir string) *Manager {
 		shell:       shell,
 		configPath:  configPath,
 		socketLabel: deriveSocketLabel(dataDir),
+		lastSize:    make(map[string]struct{ cols, rows uint16 }),
 	}
 }
 
@@ -140,13 +150,27 @@ func (m *Manager) newSessionCmd(name string, cols, rows uint16) *exec.Cmd {
 }
 
 func (m *Manager) Resize(sessionID string, cols, rows uint16) error {
-	name := sessionPrefix + sessionID
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	cmd := m.tmuxCmd("resize-window", "-t", name,
-		"-x", fmt.Sprintf("%d", cols), "-y", fmt.Sprintf("%d", rows))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("tmux resize: %w: %s", err, string(out))
+	if last, ok := m.lastSize[sessionID]; ok && last.cols == cols && last.rows == rows {
+		return nil
 	}
+
+	name := sessionPrefix + sessionID
+	if m.resizeShellOut != nil {
+		if err := m.resizeShellOut(name, cols, rows); err != nil {
+			return err
+		}
+	} else {
+		cmd := m.tmuxCmd("resize-window", "-t", name,
+			"-x", fmt.Sprintf("%d", cols), "-y", fmt.Sprintf("%d", rows))
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("tmux resize: %w: %s", err, string(out))
+		}
+	}
+
+	m.lastSize[sessionID] = struct{ cols, rows uint16 }{cols, rows}
 	return nil
 }
 
@@ -160,6 +184,7 @@ func (m *Manager) KillSession(sessionID string) error {
 		sess.Close()
 		delete(m.sessions, sessionID)
 	}
+	delete(m.lastSize, sessionID)
 	m.mu.Unlock()
 
 	name := sessionPrefix + sessionID
