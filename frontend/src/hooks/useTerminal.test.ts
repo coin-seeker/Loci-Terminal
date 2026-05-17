@@ -180,14 +180,11 @@ describe('Terminal constructor options', () => {
     disposeTerminal('S');
   });
 
-  it('enables smooth-scroll easing so xterm row-granular scroll does not look choppy', () => {
+  it('uses smoothScrollDuration 0 for instant scroll', () => {
     harness('S');
     expect(created).toHaveLength(1);
     const opts = created[0].ctorOptions;
-    // Non-zero duration is what masks the per-row snap; the exact value can
-    // be tuned but must not regress back to 0 (which exposes the snap).
-    expect(typeof opts.smoothScrollDuration).toBe('number');
-    expect(opts.smoothScrollDuration).toBeGreaterThan(0);
+    expect(opts.smoothScrollDuration).toBe(0);
   });
 });
 

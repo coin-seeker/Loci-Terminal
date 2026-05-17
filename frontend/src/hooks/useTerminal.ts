@@ -54,12 +54,11 @@ function createInstance(theme: ITheme): TerminalInstance {
     cursorStyle: 'block',
     allowProposedApi: true,
     scrollback: 10000,
-    // xterm only scrolls in whole-row units (~17px steps). Without easing,
-    // trackpad swipes feel choppy because every event snaps to a row boundary
-    // instantly. 125ms tweens the snap so the row granularity is no longer
-    // visible to the eye. (Sensitivity stays at xterm's default of 1 row/tick
-    // so small trackpad deltas don't blow past several rows per event.)
-    smoothScrollDuration: 125,
+    // Disable scroll easing — the 125ms animation adds perceptible latency on
+    // every Enter keystroke (cursor scrolls to bottom with 125ms easing).
+    // Trackpad scroll feels slightly choppier without easing, but keystroke
+    // responsiveness is the higher priority. (T2.2)
+    smoothScrollDuration: 0,
   });
   const fitAddon = new FitAddon();
   terminal.loadAddon(fitAddon);
