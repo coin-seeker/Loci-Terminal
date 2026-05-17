@@ -7,7 +7,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # Stage 2: Build Go binary
-FROM golang:1.23-alpine AS go-builder
+FROM golang:1.26-alpine AS go-builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
@@ -42,4 +42,4 @@ USER lociterm
 EXPOSE 8080
 VOLUME ["/data"]
 ENTRYPOINT ["lociterm"]
-CMD ["--port", "8080", "--data-dir", "/data"]
+CMD ["--host", "0.0.0.0", "--port", "8080", "--data-dir", "/data"]
