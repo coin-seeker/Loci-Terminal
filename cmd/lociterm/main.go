@@ -39,8 +39,9 @@ func main() {
 
 	addr := net.JoinHostPort(*host, strconv.Itoa(*port))
 	httpServer := &http.Server{
-		Addr:    addr,
-		Handler: srv.Handler(),
+		Addr:              addr,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 10 * time.Second, // slowloris 방지 (T2.8)
 	}
 
 	go func() {
