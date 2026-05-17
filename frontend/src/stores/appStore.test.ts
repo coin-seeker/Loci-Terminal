@@ -5,6 +5,7 @@ import {
   workspaceUnread,
   __resetActivityTrackingForTests,
 } from './appStore';
+import { api } from '../api/client';
 
 const { mockWorkspace, mockSession } = vi.hoisted(() => ({
   mockWorkspace: { id: 'ws-1', name: 'Test', sortOrder: 0, createdAt: '', updatedAt: '' },
@@ -374,6 +375,61 @@ describe('appStore', () => {
       });
       await useAppStore.getState().deleteSession('s-2');
       expect(useAppStore.getState().toasts).toHaveLength(0);
+    });
+  });
+
+  describe('pollActive', () => {
+    it('skips setState when fetched sessions are unchanged', async () => {
+      const initial = [{ ...mockSession, cwd: '/tmp' }];
+      useAppStore.setState({
+        workspaces: [mockWorkspace],
+        sessions: { 'ws-1': initial },
+        activeWorkspaceId: 'ws-1',
+        activeSessionId: 's-1',
+      });
+      vi.mocked(api.listSessions).mockResolvedValueOnce([{ ...mockSession, cwd: '/tmp' }]);
+
+      const before = useAppStore.getState().sessions['ws-1'];
+      await useAppStore.getState().pollActive();
+      const after = useAppStore.getState().sessions['ws-1'];
+
+      expect(after).toBe(before);
+    });
+
+    it('updates sessions when a title changes', async () => {
+      useAppStore.setState({
+        workspaces: [mockWorkspace],
+        sessions: { 'ws-1': [{ ...mockSession, title: 'Terminal' }] },
+        activeWorkspaceId: 'ws-1',
+        activeSessionId: 's-1',
+      });
+      vi.mocked(api.listSessions).mockResolvedValueOnce([{ ...mockSession, title: 'Renamed' }]);
+
+      const before = useAppStore.getState().sessions['ws-1'];
+      await useAppStore.getState().pollActive();
+      const after = useAppStore.getState().sessions['ws-1'];
+
+      expect(after).not.toBe(before);
+      expect(after[0].title).toBe('Renamed');
+    });
+
+    it('updates sessions when the list length changes', async () => {
+      useAppStore.setState({
+        workspaces: [mockWorkspace],
+        sessions: { 'ws-1': [mockSession] },
+        activeWorkspaceId: 'ws-1',
+        activeSessionId: 's-1',
+      });
+      const s2 = { ...mockSession, id: 's-2', title: 'Second' };
+      vi.mocked(api.listSessions).mockResolvedValueOnce([mockSession, s2]);
+
+      const before = useAppStore.getState().sessions['ws-1'];
+      await useAppStore.getState().pollActive();
+      const after = useAppStore.getState().sessions['ws-1'];
+
+      expect(after).not.toBe(before);
+      expect(after).toHaveLength(2);
+      expect(after[1].id).toBe('s-2');
     });
   });
 

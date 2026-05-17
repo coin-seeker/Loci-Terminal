@@ -54,6 +54,29 @@ export function __resetActivityTrackingForTests(): void {
   busyTrack.clear();
 }
 
+// Shallow equality for the fields pollActive actually reflects in the UI
+// (id stability + sidebar subtitle + tab title). pollActive runs every 5s,
+// so without this guard every poll creates fresh array/object refs and
+// re-renders every Sidebar/TabBar subscriber even when nothing changed.
+// JSON.stringify is intentionally avoided — slower and key-order sensitive.
+function sessionsEqual(a: Session[], b: Session[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const ai = a[i];
+    const bi = b[i];
+    if (
+      ai.id !== bi.id ||
+      ai.title !== bi.title ||
+      ai.cwd !== bi.cwd ||
+      ai.updatedAt !== bi.updatedAt
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 interface AppState {
   workspaces: Workspace[];
   sessions: Record<string, Session[]>;
@@ -240,10 +263,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Refresh the active workspace's session list — primarily to pick up CWD
   // changes for the sidebar subtitle. Called on a 5s interval from App.tsx.
+  // Skips setState when the fetched list is structurally identical to the
+  // cached one so subscribers don't re-render on every poll tick.
   pollActive: async () => {
     const wid = get().activeWorkspaceId;
     if (!wid) return;
     const sessions = await api.listSessions(wid);
+    const existing = get().sessions[wid] ?? [];
+    if (sessionsEqual(existing, sessions)) return;
     set((s) => ({
       sessions: { ...s.sessions, [wid]: sessions },
     }));
