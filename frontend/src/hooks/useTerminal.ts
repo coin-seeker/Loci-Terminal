@@ -95,8 +95,14 @@ function loadWebgl(inst: TerminalInstance): void {
   try {
     const webgl = new WebglAddon();
     webgl.onContextLoss(() => {
+      console.warn('WebGL context lost; attempting to reload addon');
       webgl.dispose();
       inst.webgl = null;
+      try {
+        loadWebgl(inst);
+      } catch {
+        console.warn('WebGL addon reload failed; using fallback renderer');
+      }
     });
     inst.terminal.loadAddon(webgl);
     inst.webgl = webgl;

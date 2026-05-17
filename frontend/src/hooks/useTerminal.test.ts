@@ -30,8 +30,16 @@ interface FakeFitAddon {
   proposeDimensions: Mock<() => TerminalDimensions | undefined>;
 }
 
+interface FakeWebglAddon {
+  onContextLoss: Mock<(handler: () => void) => void>;
+  dispose: Mock<() => void>;
+  clearTextureAtlas: Mock<() => void>;
+  triggerContextLoss: () => void;
+}
+
 const created: FakeTerminal[] = [];
 const fitAddons: FakeFitAddon[] = [];
+const webglAddons: FakeWebglAddon[] = [];
 
 vi.mock('@xterm/xterm', () => {
   let nextId = 0;
@@ -75,9 +83,18 @@ vi.mock('@xterm/addon-fit', () => ({
 
 vi.mock('@xterm/addon-webgl', () => ({
   WebglAddon: class {
-    onContextLoss = vi.fn();
+    contextLossHandler: (() => void) | null = null;
+    onContextLoss = vi.fn((handler: () => void) => {
+      this.contextLossHandler = handler;
+    });
     dispose = vi.fn();
     clearTextureAtlas = vi.fn();
+    constructor() {
+      webglAddons.push(this as unknown as FakeWebglAddon);
+    }
+    triggerContextLoss(): void {
+      this.contextLossHandler?.();
+    }
   },
 }));
 
@@ -140,6 +157,7 @@ function harness(sessionId: string | null) {
 function installBrowserFakes(): void {
   created.length = 0;
   fitAddons.length = 0;
+  webglAddons.length = 0;
   sockets.length = 0;
   resizeObservers.length = 0;
   (globalThis as unknown as { WebSocket: typeof FakeWebSocket }).WebSocket = FakeWebSocket;
@@ -307,6 +325,63 @@ describe('useTerminal — ResizeObserver debounce and attached gate', () => {
 
     expect(socket.send).toHaveBeenCalledTimes(1);
     expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: 'resize', cols: 80, rows: 24 }));
+  });
+});
+
+describe('useTerminal — WebGL context loss recovery', () => {
+  beforeEach(() => {
+    installBrowserFakes();
+  });
+
+  afterEach(() => {
+    cleanup();
+    disposeTerminal('W');
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('webgl context loss recovery — addon reloaded', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      harness('W');
+      const terminal = created[0];
+      const firstWebgl = webglAddons[0];
+      if (!terminal || !firstWebgl) throw new Error('expected terminal and WebGL addon');
+      terminal.loadAddon.mockClear();
+
+      firstWebgl.triggerContextLoss();
+
+      const secondWebgl = webglAddons[1];
+      if (!secondWebgl) throw new Error('expected WebGL addon reload');
+      expect(firstWebgl.dispose).toHaveBeenCalledTimes(1);
+      expect(terminal.loadAddon).toHaveBeenCalledTimes(1);
+      expect(terminal.loadAddon).toHaveBeenCalledWith(secondWebgl);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('webgl context loss fallback — graceful degrade if reload fails', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { result } = harness('W');
+      const terminal = created[0];
+      const firstWebgl = webglAddons[0];
+      if (!terminal || !firstWebgl) throw new Error('expected terminal and WebGL addon');
+      terminal.loadAddon.mockClear();
+      terminal.loadAddon.mockImplementationOnce(() => {
+        throw new Error('reload failed');
+      });
+
+      expect(() => firstWebgl.triggerContextLoss()).not.toThrow();
+
+      expect(firstWebgl.dispose).toHaveBeenCalledTimes(1);
+      expect(terminal.loadAddon).toHaveBeenCalledTimes(1);
+      expect(terminal.dispose).not.toHaveBeenCalled();
+      expect(terminal.element?.parentElement).toBe(result.current);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 
