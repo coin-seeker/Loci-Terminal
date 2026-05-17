@@ -3,12 +3,39 @@ package ws
 import (
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/younkyumjin/lociterm/internal/tmux"
 )
+
+const writeTimeout = 30 * time.Second
+
+var setTCPNoDelay = func(conn *net.TCPConn, noDelay bool) error {
+	return conn.SetNoDelay(noDelay)
+}
+
+type wsWriter struct {
+	mu   sync.Mutex
+	conn *websocket.Conn
+}
+
+func (w *wsWriter) writeBinary(data []byte) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	_ = w.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+	return w.conn.WriteMessage(websocket.BinaryMessage, data)
+}
+
+func (w *wsWriter) writeJSON(v any) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	_ = w.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+	return w.conn.WriteJSON(v)
+}
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  32 * 1024,
@@ -37,13 +64,21 @@ func (h *Handler) HandleTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
+	// Disable Nagle on the underlying TCP conn — CF tunnel adds another hop
+	// via cloudflared, so explicit assertion is safer than relying on Go default.
+	if tcp, ok := conn.NetConn().(*net.TCPConn); ok {
+		if err := setTCPNoDelay(tcp, true); err != nil {
+			log.Printf("ws: SetNoDelay failed for %s: %v", sessionID, err)
+		}
+	}
+	writer := &wsWriter{conn: conn}
 
 	var cols, rows uint16 = 120, 40
 
 	attach, err := h.tmuxMgr.Attach(sessionID, cols, rows)
 	if err != nil {
 		log.Printf("tmux attach error for %s: %v", sessionID, err)
-		conn.WriteJSON(ControlMessage{Type: "error", Message: err.Error()})
+		_ = writer.writeJSON(ControlMessage{Type: "error", Message: err.Error()})
 		return
 	}
 	sess := attach.Session
@@ -51,7 +86,9 @@ func (h *Handler) HandleTerminal(w http.ResponseWriter, r *http.Request) {
 	// handler can't take down a newer handler's attach (compare-and-close).
 	defer h.tmuxMgr.Detach(sessionID, sess)
 
-	conn.WriteJSON(ControlMessage{Type: "attached", Shell: "tmux", Recreated: attach.Recreated})
+	if err := writer.writeJSON(ControlMessage{Type: "attached", Shell: "tmux", Recreated: attach.Recreated}); err != nil {
+		return
+	}
 
 	// done is closed by whichever side dies first. sync.Once makes the close
 	// idempotent so both goroutines can safely call shutdown(). When one side
@@ -80,7 +117,7 @@ func (h *Handler) HandleTerminal(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
-			if err := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
+			if err := writer.writeBinary(buf[:n]); err != nil {
 				return
 			}
 		}
@@ -110,7 +147,9 @@ func (h *Handler) HandleTerminal(w http.ResponseWriter, r *http.Request) {
 						h.tmuxMgr.Resize(sessionID, ctrl.Cols, ctrl.Rows)
 					}
 				case "ping":
-					conn.WriteJSON(ControlMessage{Type: "pong"})
+					if err := writer.writeJSON(ControlMessage{Type: "pong"}); err != nil {
+						return
+					}
 				}
 			}
 		}
