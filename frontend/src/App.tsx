@@ -31,6 +31,8 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(220);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const dragging = useRef(false);
+  const rafId = useRef<number | undefined>(undefined);
+  const latestX = useRef<number>(0);
 
   const checkAuth = useCallback(async () => {
     const res = await fetch('/api/v1/auth/check');
@@ -75,6 +77,8 @@ export default function App() {
     setPermDismissed(true);
   }, []);
 
+  const onMenuClick = useCallback(() => setMobileSidebarOpen(true), []);
+
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
@@ -116,23 +120,35 @@ export default function App() {
     return () => document.removeEventListener('visibilitychange', onVisibility);
   }, []);
 
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!dragging.current) return;
+
+    latestX.current = e.clientX;
+    if (rafId.current === undefined) {
+      rafId.current = requestAnimationFrame(() => {
+        const newWidth = Math.max(140, Math.min(400, latestX.current));
+        setSidebarWidth(newWidth);
+        rafId.current = undefined;
+      });
+    }
+  }, []);
+
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     dragging.current = true;
 
-    const onMouseMove = (e: MouseEvent) => {
-      if (dragging.current) {
-        setSidebarWidth(Math.max(140, Math.min(400, e.clientX)));
-      }
-    };
     const onMouseUp = () => {
       dragging.current = false;
-      document.removeEventListener('mousemove', onMouseMove);
+      if (rafId.current !== undefined) {
+        cancelAnimationFrame(rafId.current);
+        rafId.current = undefined;
+      }
+      document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
-    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', onMouseUp);
-  }, []);
+  }, [handleMouseMove]);
 
   if (authState === 'loading') {
     return (
@@ -313,7 +329,7 @@ export default function App() {
       <div style={{ flex: 1, height: '100%', overflow: 'hidden', minWidth: 0 }}>
         <TerminalPanel
           showMenuButton={isMobile}
-          onMenuClick={() => setMobileSidebarOpen(true)}
+          onMenuClick={onMenuClick}
         />
       </div>
       </div>
