@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="Younkyum/Loci-Terminal"
+REPO="${LOCITERM_REPO:-Younkyum/Loci-Terminal}"
 INSTALL_DIR="/usr/local/bin"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 PORT="${LOCITERM_PORT:-8080}"
+HOST="${LOCITERM_HOST:-127.0.0.1}"
+DATA_DIR="${LOCITERM_DATA_DIR:-}"
 OS="$(uname -s)"
+BUILD_TMPDIR=""
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -22,30 +27,58 @@ check_deps() {
         fi
     done
     if ! command -v go &>/dev/null; then
-        error "Go is required to build from source. Install Go 1.22+ first."
+        error "Go is required to build from source. Install Go matching go.mod (1.26+) first."
     fi
     if ! command -v node &>/dev/null; then
         error "Node.js is required to build from source. Install Node.js 20+ first."
     fi
-    info "Dependencies OK (go, node, tmux, git)"
+    if ! command -v npm &>/dev/null; then
+        error "npm is required to build the frontend. Install Node.js 20+ with npm first."
+    fi
+    info "Dependencies OK (go, node, npm, tmux, git)"
+}
+
+cleanup() {
+    if [[ -n "$BUILD_TMPDIR" ]]; then
+        rm -rf "$BUILD_TMPDIR"
+    fi
+}
+
+is_repo_checkout() {
+    [[ -f "${REPO_ROOT}/go.mod" && -d "${REPO_ROOT}/frontend" && -d "${REPO_ROOT}/cmd/lociterm" ]]
+}
+
+default_data_dir() {
+    case "$OS" in
+        Linux)  echo "/var/lib/lociterm" ;;
+        Darwin) echo "${HOME}/.local/share/lociterm" ;;
+        *)      echo "./data" ;;
+    esac
 }
 
 build_from_source() {
     info "Building from source..."
 
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    trap "rm -rf $tmpdir" EXIT
+    local src_dir
+    if is_repo_checkout; then
+        src_dir="$REPO_ROOT"
+        info "Using local checkout: ${src_dir}"
+    else
+        BUILD_TMPDIR=$(mktemp -d)
+        trap cleanup EXIT
 
-    info "Cloning repository..."
-    git clone --depth 1 "https://github.com/${REPO}.git" "$tmpdir/loci-terminal"
-    cd "$tmpdir/loci-terminal"
+        info "Cloning repository..."
+        git clone --depth 1 "https://github.com/${REPO}.git" "$BUILD_TMPDIR/loci-terminal"
+        src_dir="$BUILD_TMPDIR/loci-terminal"
+    fi
+    cd "$src_dir"
 
     info "Building frontend..."
     cd frontend && npm ci && npm run build && cd ..
 
     info "Building Go binary..."
     mkdir -p cmd/lociterm/frontend
+    rm -rf cmd/lociterm/frontend/dist
     cp -r frontend/dist cmd/lociterm/frontend/dist
     CGO_ENABLED=0 go build -ldflags="-s -w" -o lociterm ./cmd/lociterm
 
@@ -61,13 +94,12 @@ build_from_source() {
 
 setup_systemd() {
     local user="$1"
-    local data_dir="/var/lib/lociterm"
     local service_file="/etc/systemd/system/lociterm@.service"
 
     info "Setting up systemd service for user: ${user}"
 
-    mkdir -p "$data_dir"
-    chown "$user:$user" "$data_dir"
+    mkdir -p "$DATA_DIR"
+    chown "$user:$user" "$DATA_DIR"
 
     cat > "$service_file" << UNIT
 [Unit]
@@ -77,7 +109,7 @@ After=network.target
 [Service]
 Type=simple
 User=%i
-ExecStart=/usr/local/bin/lociterm --port ${PORT} --data-dir /var/lib/lociterm
+ExecStart=/usr/local/bin/lociterm --host ${HOST} --port ${PORT} --data-dir ${DATA_DIR}
 Restart=on-failure
 RestartSec=5
 Environment=LANG=en_US.UTF-8
@@ -97,14 +129,13 @@ UNIT
 
 setup_launchd() {
     local user="$1"
-    local data_dir="${HOME}/.local/share/lociterm"
     local plist_dir="${HOME}/Library/LaunchAgents"
     local plist_file="${plist_dir}/com.loci-terminal.lociterm.plist"
     local log_dir="${HOME}/Library/Logs/lociterm"
 
     info "Setting up launchd service for user: ${user}"
 
-    mkdir -p "$data_dir" "$plist_dir" "$log_dir"
+    mkdir -p "$DATA_DIR" "$plist_dir" "$log_dir"
 
     cat > "$plist_file" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -116,10 +147,12 @@ setup_launchd() {
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/lociterm</string>
+        <string>--host</string>
+        <string>${HOST}</string>
         <string>--port</string>
         <string>${PORT}</string>
         <string>--data-dir</string>
-        <string>${data_dir}</string>
+        <string>${DATA_DIR}</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -196,7 +229,9 @@ print_usage() {
     echo ""
     echo "Options:"
     echo "  --user USER    System user to run as (default: current user)"
+    echo "  --host HOST    Server host (default: 127.0.0.1)"
     echo "  --port PORT    Server port (default: 8080)"
+    echo "  --data-dir DIR SQLite database directory (default: OS-specific)"
     echo "  --help         Show this help"
     echo ""
 }
@@ -207,11 +242,17 @@ main() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --user)  user="$2"; shift 2 ;;
+            --host)  HOST="$2"; shift 2 ;;
             --port)  PORT="$2"; shift 2 ;;
+            --data-dir) DATA_DIR="$2"; shift 2 ;;
             --help)  print_usage; exit 0 ;;
             *)       error "Unknown option: $1" ;;
         esac
     done
+
+    if [[ -z "$DATA_DIR" ]]; then
+        DATA_DIR="$(default_data_dir)"
+    fi
 
     echo ""
     echo "  ╔═══════════════════════════════════╗"
@@ -221,7 +262,9 @@ main() {
 
     info "OS: ${OS}"
     info "User: ${user}"
+    info "Host: ${HOST}"
     info "Port: ${PORT}"
+    info "Data dir: ${DATA_DIR}"
     echo ""
 
     if [[ "$OS" == "Linux" && $EUID -ne 0 ]]; then
@@ -240,14 +283,19 @@ main() {
             ;;
         *)
             warn "Unknown OS: ${OS}. Binary installed but no service configured."
-            warn "Run manually: lociterm --port ${PORT}"
+            warn "Run manually: lociterm --host ${HOST} --port ${PORT} --data-dir ${DATA_DIR}"
             ;;
     esac
+
+    local display_host="${HOST}"
+    if [[ "$display_host" == "0.0.0.0" || "$display_host" == "::" ]]; then
+        display_host="localhost"
+    fi
 
     echo ""
     info "========================================="
     info " Installation complete!"
-    info " Open http://localhost:${PORT}"
+    info " Open http://${display_host}:${PORT}"
     info "========================================="
 
     if [[ "$OS" == "Darwin" ]]; then
