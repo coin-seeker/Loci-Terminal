@@ -9,3 +9,4 @@ frontend/node_modules/
 *.db-journal
 *.db-wal
 .DS_Store
+AGENTS.md
